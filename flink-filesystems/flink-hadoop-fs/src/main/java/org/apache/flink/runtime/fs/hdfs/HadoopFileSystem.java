@@ -22,9 +22,19 @@ import org.apache.flink.core.fs.BlockLocation;
 import org.apache.flink.core.fs.FileStatus;
 import org.apache.flink.core.fs.FileSystem;
 import org.apache.flink.core.fs.Path;
+import org.apache.flink.util.ExceptionUtils;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import javax.annotation.Nullable;
 
 import java.io.IOException;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 import java.net.URI;
+import java.nio.charset.StandardCharsets;
+import java.util.UUID;
 
 import static org.apache.flink.util.Preconditions.checkNotNull;
 
@@ -33,8 +43,14 @@ import static org.apache.flink.util.Preconditions.checkNotNull;
  */
 public class HadoopFileSystem extends FileSystem {
 
+	private static final Logger LOG = LoggerFactory.getLogger(HadoopFileSystem.class);
+
 	/** The wrapped Hadoop File System. */
 	private final org.apache.hadoop.fs.FileSystem fs;
+
+	private transient Method refTruncate;
+
+	private transient Method refRecoverLease;
 
 	/**
 	 * Wraps the given Hadoop File System object as a Flink File System object.
@@ -168,4 +184,101 @@ public class HadoopFileSystem extends FileSystem {
 	public boolean isDistributedFS() {
 		return true;
 	}
+
+	@Override
+	public boolean truncate(final Path f, final long newLength) throws IOException {
+		if (refTruncate == null) {
+			refTruncate = reflectTruncate(fs);
+		}
+
+		if (refTruncate != null) {
+			try {
+				return (boolean) refTruncate.invoke(fs, new org.apache.hadoop.fs.Path(f.toString()), newLength);
+			} catch (final IllegalAccessException e) {
+				throw new RuntimeException("Could not invoke truncate.", e);
+			} catch (final InvocationTargetException e) {
+				ExceptionUtils.rethrowIOException(e.getCause());
+			}
+		}
+
+		return super.truncate(f, newLength);
+	}
+
+	@Override
+	public boolean isTruncateSupported() {
+		if (refTruncate == null) {
+			refTruncate = reflectTruncate(fs);
+		}
+
+		return refTruncate != null;
+	}
+
+	@Override
+	public boolean recoverLease(final Path f) throws IOException {
+		if (refRecoverLease == null) {
+			refRecoverLease = getMethodByName(fs, "recoverLease", org.apache.hadoop.fs.Path.class);
+		}
+
+		if (refRecoverLease != null) {
+			try {
+				return (boolean) refRecoverLease.invoke(fs, new org.apache.hadoop.fs.Path(f.toString()));
+			} catch (IllegalAccessException | ClassCastException e) {
+				LOG.debug("Method recoverLease is not supported by file system {}.",
+					fs.getClass().getSimpleName(), e);
+			} catch (final InvocationTargetException e) {
+				ExceptionUtils.rethrowIOException(e.getCause());
+			}
+		}
+
+		return super.recoverLease(f);
+	}
+
+
+	/**
+	 * Gets the truncate() call using reflection.
+	 */
+	@Nullable
+	private Method reflectTruncate(final org.apache.hadoop.fs.FileSystem fs) {
+		Method m = getMethodByName(fs, "truncate", org.apache.hadoop.fs.Path.class, long.class);
+
+		if (m == null) {
+			return null;
+		}
+
+		// verify that truncate actually works
+		final Path testPath = new Path(UUID.randomUUID().toString());
+		try (HadoopDataOutputStream outputStream = create(testPath, WriteMode.NO_OVERWRITE)) {
+			outputStream.write("hello".getBytes(StandardCharsets.UTF_8));
+		} catch (final IOException e) {
+			throw new RuntimeException("Could not create file " + testPath + " for checking if truncate works.", e);
+		}
+
+		try {
+			final boolean asyncTruncate = (boolean) m.invoke(fs, new org.apache.hadoop.fs.Path(testPath.toString()), 2);
+		} catch (IllegalAccessException | ClassCastException e) {
+			LOG.debug("Truncate is not supported.", e);
+			m = null;
+		} catch (final InvocationTargetException e) {
+			throw new RuntimeException(e.getCause());
+		}
+
+		try {
+			delete(testPath, false);
+		} catch (final IOException e) {
+			throw new RuntimeException("Could not delete truncate test file " + testPath, e);
+		}
+
+		return m;
+	}
+
+	@Nullable
+	private static Method getMethodByName(final Object object, final String methodName, final Class<?>... parameterTypes) {
+		try {
+			return object.getClass().getMethod(methodName, parameterTypes);
+		} catch (final NoSuchMethodException ex) {
+			LOG.debug("{} not found.", methodName);
+			return null;
+		}
+	}
+
 }

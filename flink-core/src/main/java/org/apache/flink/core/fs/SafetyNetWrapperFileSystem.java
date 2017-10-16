@@ -141,6 +141,21 @@ public class SafetyNetWrapperFileSystem extends FileSystem implements WrappingPr
 	}
 
 	@Override
+	public boolean truncate(Path f, long newLength) throws IOException {
+		return unsafeFileSystem.truncate(f, newLength);
+	}
+
+	@Override
+	public boolean isTruncateSupported() {
+		return unsafeFileSystem.isTruncateSupported();
+	}
+
+	@Override
+	public boolean recoverLease(Path f) throws IOException {
+		return unsafeFileSystem.recoverLease(f);
+	}
+
+	@Override
 	public FileSystem getWrappedDelegate() {
 		return unsafeFileSystem;
 	}

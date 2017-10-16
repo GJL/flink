@@ -27,6 +27,7 @@ package org.apache.flink.core.fs;
 
 import org.apache.flink.annotation.Internal;
 import org.apache.flink.annotation.Public;
+import org.apache.flink.annotation.PublicEvolving;
 import org.apache.flink.configuration.ConfigConstants;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.configuration.IllegalConfigurationException;
@@ -38,6 +39,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.annotation.Nullable;
+
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.IOException;
@@ -632,6 +634,56 @@ public abstract class FileSystem {
 	 * @return True, if this is a distributed file system, false otherwise.
 	 */
 	public abstract boolean isDistributedFS();
+
+	/**
+	 * Truncates a file to a specified length. The method has undefined behavior if the new length
+	 * is bigger than the current length of the file.
+	 *
+	 * @param f The file to be truncated
+	 * @param newLength The new length of the file. Should not be greater than the current length.
+	 * @return <code>true</code>, if the truncate operation is asynchronous,
+	 *         <code>false</code> otherwise.
+	 * @throws IOException
+	 * @throws UnsupportedOperationException If the file system implementation does not support the
+	 * 										 truncate operation. Use {@link #isTruncateSupported()}
+	 * 										 to test if the file system supports the operation.
+	 *
+	 */
+	@PublicEvolving
+	public boolean truncate(Path f, long newLength) throws IOException {
+		throw new UnsupportedOperationException("Truncate is not implemented for " + getClass().getSimpleName());
+	}
+
+	/**
+	 * Returns true if the file system supports the truncate operation.
+	 *
+	 * @return <code>true</code>, if truncate is supported, <code>false</code> otherwise.
+	 */
+	@PublicEvolving
+	public boolean isTruncateSupported() {
+		return false;
+	}
+
+	/**
+	 * Starts the lease recovery of a file.
+	 *
+	 * <p>For example, in HDFS, a client opening a file for writing is granted a lease for the file.
+	 * Only the client holding the lease can write to that file. If the file that is written to is
+	 * not closed by the client, the lease may remain open inadvertently. This method can be used to
+	 * force the revocation of the lease</p>
+	 *
+	 * <p>If the file system does not enforce a single writer per file, this method does not do
+	 * anything.</p>
+	 *
+	 * @param f a file for which to recover the lease
+	 * @return <code>true</code> if the file is already closed, or if the file system does not
+	 *         support this operation.
+	 * @throws IOException
+	 */
+	@Internal
+	public boolean recoverLease(Path f) throws IOException {
+		return true;
+	}
 
 	// ------------------------------------------------------------------------
 	//  output directory initialization
