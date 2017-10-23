@@ -18,12 +18,14 @@
 
 package org.apache.flink.runtime.fs.hdfs;
 
+import org.apache.flink.annotation.VisibleForTesting;
 import org.apache.flink.core.fs.BlockLocation;
 import org.apache.flink.core.fs.FileStatus;
 import org.apache.flink.core.fs.FileSystem;
 import org.apache.flink.core.fs.Path;
 import org.apache.flink.util.ExceptionUtils;
 
+import org.apache.hadoop.util.VersionInfo;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -33,7 +35,6 @@ import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.net.URI;
-import java.nio.charset.StandardCharsets;
 import java.util.UUID;
 
 import static org.apache.flink.util.Preconditions.checkNotNull;
@@ -45,7 +46,9 @@ public class HadoopFileSystem extends FileSystem {
 
 	private static final Logger LOG = LoggerFactory.getLogger(HadoopFileSystem.class);
 
-	/** The wrapped Hadoop File System. */
+	/**
+	 * The wrapped Hadoop File System.
+	 */
 	private final org.apache.hadoop.fs.FileSystem fs;
 
 	private transient Method refTruncate;
@@ -64,6 +67,7 @@ public class HadoopFileSystem extends FileSystem {
 
 	/**
 	 * Gets the underlying Hadoop FileSystem.
+	 *
 	 * @return The underlying Hadoop FileSystem.
 	 */
 	public org.apache.hadoop.fs.FileSystem getHadoopFileSystem() {
@@ -96,7 +100,7 @@ public class HadoopFileSystem extends FileSystem {
 
 	@Override
 	public BlockLocation[] getFileBlockLocations(final FileStatus file, final long start, final long len)
-			throws IOException {
+		throws IOException {
 		if (!(file instanceof HadoopFileStatus)) {
 			throw new IOException("file is not an instance of DistributedFileStatus");
 		}
@@ -132,7 +136,7 @@ public class HadoopFileSystem extends FileSystem {
 	@Override
 	@SuppressWarnings("deprecation")
 	public HadoopDataOutputStream create(final Path f, final boolean overwrite, final int bufferSize,
-			final short replication, final long blockSize) throws IOException {
+										 final short replication, final long blockSize) throws IOException {
 		final org.apache.hadoop.fs.FSDataOutputStream fdos = this.fs.create(
 			new org.apache.hadoop.fs.Path(f.toString()), overwrite, bufferSize, replication, blockSize);
 		return new HadoopDataOutputStream(fdos);
@@ -201,7 +205,8 @@ public class HadoopFileSystem extends FileSystem {
 			}
 		}
 
-		return super.truncate(f, newLength);
+		throw new UnsupportedOperationException("Hadoop " +
+			VersionInfo.getVersion() + " does not support truncate.");
 	}
 
 	@Override
@@ -247,32 +252,33 @@ public class HadoopFileSystem extends FileSystem {
 
 		// verify that truncate actually works
 		final Path testPath = new Path(UUID.randomUUID().toString());
-		try (HadoopDataOutputStream outputStream = create(testPath, WriteMode.NO_OVERWRITE)) {
-			outputStream.write("hello".getBytes(StandardCharsets.UTF_8));
-		} catch (final IOException e) {
-			throw new RuntimeException("Could not create file " + testPath + " for checking if truncate works.", e);
-		}
-
 		try {
 			final boolean asyncTruncate = (boolean) m.invoke(fs, new org.apache.hadoop.fs.Path(testPath.toString()), 2);
 		} catch (IllegalAccessException | ClassCastException e) {
+			// Method is not accessible from this class or the return type was not a boolean.
 			LOG.debug("Truncate is not supported.", e);
 			m = null;
 		} catch (final InvocationTargetException e) {
-			throw new RuntimeException(e.getCause());
-		}
-
-		try {
-			delete(testPath, false);
-		} catch (final IOException e) {
-			throw new RuntimeException("Could not delete truncate test file " + testPath, e);
+			// If truncate() can be invoked and is supported by the file system implementation,
+			// an IOException should be thrown because the file name is randomly generated and
+			// should not exist. We could create a file with a random name and truncate the file.
+			// However we might not have permissions to do so. If the file system does not support
+			// truncate(), it will throw UnsupportedMethodOperation.
+			if (e.getCause() instanceof IOException) {
+				LOG.debug("Expected exception when invoking truncate() on file {} as the file should not exist",
+					testPath, e.getCause());
+			} else {
+				LOG.debug("Truncate is not supported.", e);
+				m = null;
+			}
 		}
 
 		return m;
 	}
 
 	@Nullable
-	private static Method getMethodByName(final Object object, final String methodName, final Class<?>... parameterTypes) {
+	@VisibleForTesting
+	private Method getMethodByName(final Object object, final String methodName, final Class<?>... parameterTypes) {
 		try {
 			return object.getClass().getMethod(methodName, parameterTypes);
 		} catch (final NoSuchMethodException ex) {

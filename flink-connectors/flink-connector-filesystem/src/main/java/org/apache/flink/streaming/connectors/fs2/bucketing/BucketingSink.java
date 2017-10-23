@@ -43,15 +43,14 @@ import org.apache.flink.streaming.runtime.tasks.ProcessingTimeCallback;
 import org.apache.flink.streaming.runtime.tasks.ProcessingTimeService;
 import org.apache.flink.util.Preconditions;
 
+import org.apache.commons.lang3.time.StopWatch;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -112,7 +111,7 @@ import java.util.Set;
  * file with the same name as the part file and the suffix {@code ".valid-length"} will be created that contains the
  * length up to which the file contains valid data. When reading the file, it must be ensured that it is only read up
  * to that point. The prefixes and suffixes for the different file states and valid-length files can be configured
- * using the adequate setter method, e.g. {@link #setPendingSuffix(String)}.
+ * using the adequate setter method, e.g.  #setPendingSuffix(String) TODO: fix javadoc.
  *
  *
  * <p><b>NOTE:</b>
@@ -196,6 +195,13 @@ public class BucketingSink<T>
 	private static final String DEFAULT_PENDING_SUFFIX = ".pending";
 
 	/**
+	 * The suffix for {@code final} part files. These are files that were
+	 * confirmed by a checkpoint. Note that this field is only relevant if
+	 * {@link #eventualConsistencySupport} is set to<code>true</code>.
+	 */
+	private static final String DEFAULT_FINAL_SUFFIX = ".final";
+
+	/**
 	 * The prefix for {@code pending} part files. These are closed files that we are
 	 * not currently writing to (inactive or reached {@link #batchSize}), but which
 	 * were not yet confirmed by a checkpoint.
@@ -253,6 +259,8 @@ public class BucketingSink<T>
 	private String pendingSuffix = DEFAULT_PENDING_SUFFIX;
 	private String pendingPrefix = DEFAULT_PENDING_PREFIX;
 
+	private String finalSuffix = DEFAULT_FINAL_SUFFIX;
+
 	private String validLengthSuffix = DEFAULT_VALID_SUFFIX;
 	private String validLengthPrefix = DEFAULT_VALID_PREFIX;
 
@@ -262,6 +270,10 @@ public class BucketingSink<T>
 	 * The timeout for asynchronous operations such as recoverLease and truncate (in {@code ms}).
 	 */
 	private long asyncTimeout = DEFAULT_ASYNC_TIMEOUT_MS;
+
+	private boolean eventualConsistencySupport;
+
+	private transient PartFilePromotionStrategy partFilePromotionStrategy;
 
 	// --------------------------------------------------------------------------------------------
 	//  Internal fields (not configurable by user)
@@ -309,7 +321,9 @@ public class BucketingSink<T>
 
 	@Override
 	public void initializeState(FunctionInitializationContext context) throws Exception {
-		Preconditions.checkArgument(this.restoredBucketStates == null, "The operator has already been initialized.");
+		Preconditions.checkState(this.restoredBucketStates == null, "The operator has already been initialized.");
+
+		initiPartFilePromotionStrategy();
 
 		try {
 			initFileSystem();
@@ -359,6 +373,22 @@ public class BucketingSink<T>
 	private void initFileSystem() throws IOException {
 		if (fs == null) {
 			fs = FileSystem.get(new Path(basePath).toUri());
+		}
+	}
+
+	private void initiPartFilePromotionStrategy() {
+		if (eventualConsistencySupport) {
+			partFilePromotionStrategy =
+				new EventuallyConsistentFileSystemPartFilePromotionStrategy(
+					pendingSuffix,
+					finalSuffix);
+		} else {
+			partFilePromotionStrategy =
+				new ConsistentFileSystemPartFilePromotionStrategy(
+					inProgressSuffix,
+					inProgressPrefix,
+					pendingSuffix,
+					pendingPrefix);
 		}
 	}
 
@@ -454,14 +484,12 @@ public class BucketingSink<T>
 	private void openNewPartFile(Path bucketPath, BucketState<T> bucketState) throws Exception {
 		closeCurrentPartFile(bucketState);
 
-		if (!fs.exists(bucketPath)) {
-			try {
-				if (fs.mkdirs(bucketPath)) {
-					LOG.debug("Created new bucket directory: {}", bucketPath);
-				}
-			} catch (IOException e) {
-				throw new RuntimeException("Could not create new bucket path.", e);
+		try {
+			if (fs.mkdirs(bucketPath)) {
+				LOG.debug("Created new bucket directory: {}", bucketPath);
 			}
+		} catch (IOException e) {
+			throw new RuntimeException("Could not create new bucket path.", e);
 		}
 
 		// The following loop tries different partCounter values in ascending order until it reaches the minimum
@@ -470,25 +498,21 @@ public class BucketingSink<T>
 		// clean the base directory in case of rescaling.
 
 		int subtaskIndex = getRuntimeContext().getIndexOfThisSubtask();
-		Path partPath = new Path(bucketPath, partPrefix + "-" + subtaskIndex + "-" + bucketState.partCounter);
+		Path partPath = new Path(bucketPath, partPrefix + "-" + subtaskIndex + "-" + partFilePromotionStrategy.getPartFileSuffix(bucketState.partCounter++));
 		while (fs.exists(partPath) ||
-				fs.exists(getPendingPathFor(partPath)) ||
-				fs.exists(getInProgressPathFor(partPath))) {
-			bucketState.partCounter++;
-			partPath = new Path(bucketPath, partPrefix + "-" + subtaskIndex + "-" + bucketState.partCounter);
+				fs.exists(partFilePromotionStrategy.getPendingPathFor(partPath)) ||
+				fs.exists(partFilePromotionStrategy.getInProgressPathFor(partPath))) {
+			partPath = new Path(bucketPath, partPrefix + "-" + subtaskIndex + "-" + partFilePromotionStrategy.getPartFileSuffix(bucketState.partCounter++));
 		}
-
-		// increase, so we don't have to check for this name next time
-		bucketState.partCounter++;
 
 		LOG.debug("Next part path is {}", partPath.toString());
 		bucketState.currentFile = partPath.toString();
 
-		Path inProgressPath = getInProgressPathFor(partPath);
 		if (bucketState.writer == null) {
 			bucketState.writer = writerTemplate.duplicate();
 		}
 
+		Path inProgressPath = partFilePromotionStrategy.getInProgressPathFor(partPath);
 		bucketState.writer.open(fs, inProgressPath);
 		bucketState.isWriterOpen = true;
 	}
@@ -504,24 +528,11 @@ public class BucketingSink<T>
 
 		if (bucketState.currentFile != null) {
 			Path currentPartPath = new Path(bucketState.currentFile);
-			Path inProgressPath = getInProgressPathFor(currentPartPath);
-			Path pendingPath = getPendingPathFor(currentPartPath);
-
-			fs.rename(inProgressPath, pendingPath);
-			LOG.debug("Moving in-progress bucket {} to pending file {}",
-				inProgressPath,
-				pendingPath);
+			partFilePromotionStrategy.promoteToPending(fs, currentPartPath);
+			LOG.debug("Promoted file {} to pending state.", currentPartPath);
 			bucketState.pendingFiles.add(currentPartPath.toString());
 			bucketState.currentFile = null;
 		}
-	}
-
-	private Path getPendingPathFor(Path path) {
-		return new Path(path.getParent(), pendingPrefix + path.getName()).suffix(pendingSuffix);
-	}
-
-	private Path getInProgressPathFor(Path path) {
-		return new Path(path.getParent(), inProgressPrefix + path.getName()).suffix(inProgressSuffix);
 	}
 
 	private Path getValidLengthPathFor(Path path) {
@@ -547,16 +558,14 @@ public class BucketingSink<T>
 						List<String> pendingPaths = entry.getValue();
 
 						if (pastCheckpointId <= checkpointId) {
-							LOG.debug("Moving pending files to final location for checkpoint {}", pastCheckpointId);
+							LOG.debug("Promote pending files to final state for checkpoint {}", pastCheckpointId);
 
 							for (String filename : pendingPaths) {
 								Path finalPath = new Path(filename);
-								Path pendingPath = getPendingPathFor(finalPath);
-
-								fs.rename(pendingPath, finalPath);
+								partFilePromotionStrategy.promoteToFinal(fs, finalPath);
 								LOG.debug(
-									"Moving pending file {} to final location having completed checkpoint {}.",
-									pendingPath,
+									"Promote file {} from pending to final state after having completed checkpoint {}.",
+									finalPath,
 									pastCheckpointId);
 							}
 							pendingCheckpointsIt.remove();
@@ -637,30 +646,12 @@ public class BucketingSink<T>
 			// file that specifies up to which length it is valid) and rename it to the final name
 			// before starting a new bucket file.
 
-			Path partPath = new Path(file);
+			final Path partPath = new Path(file);
 			try {
-				Path partPendingPath = getPendingPathFor(partPath);
-				Path partInProgressPath = getInProgressPathFor(partPath);
-
-				if (fs.exists(partPendingPath)) {
-					LOG.debug("In-progress file {} has been moved to pending after checkpoint, moving to final location.", partPath);
-					// has been moved to pending in the mean time, rename to final location
-					fs.rename(partPendingPath, partPath);
-				} else if (fs.exists(partInProgressPath)) {
-					LOG.debug("In-progress file {} is still in-progress, moving to final location.", partPath);
-					// it was still in progress, rename to final path
-					fs.rename(partInProgressPath, partPath);
-				} else if (fs.exists(partPath)) {
-					LOG.debug("In-Progress file {} was already moved to final location {}.", file, partPath);
-				} else {
-					LOG.warn("Invalid state on file system detected. " +
-							"Expected to find one of the following files: {} but did not find any.",
-						new HashSet<>(Arrays.asList(partPath, partPendingPath, partInProgressPath)));
-					return;
-				}
+				partFilePromotionStrategy.promoteToFinal(fs, partPath);
 
 				// truncate it or write a ".valid-length" file to specify up to which point it is valid
-				if (fs.isTruncateSupported()) {
+				if (fs.isTruncateSupported() && !eventualConsistencySupport) {
 					LOG.debug("Truncating {} to valid length {}", partPath, validLength);
 
 					// some-one else might still hold the lease from a previous try, we are
@@ -669,32 +660,34 @@ public class BucketingSink<T>
 						try {
 							fs.recoverLease(partPath);
 						} catch (final IOException e) {
-							LOG.warn("RecoverLease failed due to: {}", e.getMessage());
+							LOG.warn("RecoverLease failed due to: {}", e);
 						}
 					}
 
 					boolean asyncTruncate = false;
-					final long truncateStartTime = System.currentTimeMillis();
+					final StopWatch truncateStopWatch = new StopWatch();
+					truncateStopWatch.start();
 					while (true) {
 						try {
 							asyncTruncate = fs.truncate(partPath, validLength);
 							break;
 						} catch (final IOException e) {
-							LOG.warn("Truncating file {} failed due to: {}. Retrying...", partPath, e.getMessage());
-						}
-						if (System.currentTimeMillis() - truncateStartTime > asyncTimeout) {
-							break;
-						}
-						try {
-							Thread.sleep(500);
-						} catch (final InterruptedException ie) {
-							Thread.currentThread().interrupt();
-							break;
+							if (truncateStopWatch.getTime() > asyncTimeout) {
+								LOG.error("Truncating file {} failed.", partPath, e);
+							} else {
+								LOG.warn("Truncating file {} failed due to: {}. Retrying...", partPath, e.getMessage());
+								try {
+									Thread.sleep(500);
+								} catch (final InterruptedException ie) {
+									Thread.currentThread().interrupt();
+									break;
+								}
+							}
 						}
 					}
 
 					long newLen = fs.getFileStatus(partPath).getLen();
-					if (asyncTruncate) {
+					if (asyncTruncate) { //TODO: check if fs is eventually consistent
 						// we must wait for the asynchronous truncate operation to complete
 						final long startTime = System.currentTimeMillis();
 						while (newLen != validLength) {
@@ -724,7 +717,7 @@ public class BucketingSink<T>
 					}
 				}
 
-			} catch (final IOException e) {
+			} catch (final Exception e) {
 				throw new RuntimeException("Error while restoring BucketingSink state.", e);
 			}
 		}
@@ -734,24 +727,20 @@ public class BucketingSink<T>
 		// Move files that are confirmed by a checkpoint but did not get moved to final location
 		// because the checkpoint notification did not happen before a failure
 
-		LOG.debug("Moving pending files to final location on restore.");
+		LOG.debug("Promoting pending files to final state on restore.");
 
 		Set<Long> pastCheckpointIds = pendingFilesPerCheckpoint.keySet();
 		for (Long pastCheckpointId : pastCheckpointIds) {
 			// All the pending files are buckets that have been completed but are waiting to be renamed
 			// to their final name
 			for (String filename : pendingFilesPerCheckpoint.get(pastCheckpointId)) {
-				Path finalPath = new Path(filename);
-				Path pendingPath = getPendingPathFor(finalPath);
-
+				Path finalPath = new Path(filename); //TODO: rename
 				try {
-					if (fs.exists(pendingPath)) {
-						LOG.debug("Restoring BucketingSink State: Moving pending file {} to final location after complete checkpoint {}.", pendingPath, pastCheckpointId);
-						fs.rename(pendingPath, finalPath);
-					}
-				} catch (IOException e) {
-					LOG.error("Restoring BucketingSink State: Error while renaming pending file {} to final path {}: {}", pendingPath, finalPath, e);
-					throw new RuntimeException("Error while renaming pending file " + pendingPath + " to final path " + finalPath, e);
+					partFilePromotionStrategy.promoteToFinal(fs, finalPath);
+					LOG.debug("Restoring BucketingSink State: Promoting file {} from pending to final state after complete checkpoint {}.", finalPath, pastCheckpointId);
+				} catch (Exception e) {
+					throw new RuntimeException("Restoring BucketingSink State: Error while promoting pending file "
+						+ finalPath + " to final state: {}", e);
 				}
 			}
 		}
@@ -849,6 +838,14 @@ public class BucketingSink<T>
 	}
 
 	/**
+	 * Sets the suffix of final part files. The default is {@code ".final"}.
+	 */
+	public BucketingSink<T> setFinalSuffix(String pendingSuffix) {
+		this.finalSuffix = finalSuffix;
+		return this;
+	}
+
+	/**
 	 * Sets the suffix of valid-length files. The default is {@code ".valid-length"}.
 	 */
 	public BucketingSink<T> setValidLengthSuffix(String validLengthSuffix) {
@@ -895,6 +892,13 @@ public class BucketingSink<T>
 	public BucketingSink<T> setAsyncTimeout(long timeout) {
 		this.asyncTimeout = timeout;
 		return this;
+	}
+
+	/**
+	 * Enables the Sink's mode to be used with eventually consistent file systems.
+	 */
+	public void enableEventualConsistencySupport() {
+		eventualConsistencySupport = true;
 	}
 
 	@VisibleForTesting

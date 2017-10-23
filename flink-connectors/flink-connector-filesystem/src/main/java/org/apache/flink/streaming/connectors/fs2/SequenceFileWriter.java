@@ -16,19 +16,19 @@
  * limitations under the License.
  */
 
-package org.apache.flink.streaming.connectors.fs;
+package org.apache.flink.streaming.connectors.fs2;
 
 import org.apache.flink.api.common.ExecutionConfig;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
 import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.api.java.typeutils.InputTypeConfigurable;
 import org.apache.flink.api.java.typeutils.TupleTypeInfoBase;
-import org.apache.flink.streaming.connectors.fs.bucketing.BucketingSink;
+import org.apache.flink.core.fs.FileSystem;
+import org.apache.flink.core.fs.Path;
+import org.apache.flink.streaming.connectors.fs2.bucketing.BucketingSink;
 
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FSDataOutputStream;
-import org.apache.hadoop.fs.FileSystem;
-import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.io.SequenceFile;
 import org.apache.hadoop.io.Writable;
 import org.apache.hadoop.io.compress.CompressionCodec;
@@ -39,8 +39,8 @@ import java.io.IOException;
 /**
  * A {@link Writer} that writes the bucket files as Hadoop {@link SequenceFile SequenceFiles}.
  * The input to the {@link BucketingSink} must
- * be a {@link org.apache.flink.api.java.tuple.Tuple2} of two Hadoop
- * {@link org.apache.hadoop.io.Writable Writables}.
+ * be a {@link Tuple2} of two Hadoop
+ * {@link Writable Writables}.
  *
  * @param <K> The type of the first tuple field.
  * @param <V> The type of the second tuple field.
@@ -73,7 +73,7 @@ public class SequenceFileWriter<K extends Writable, V extends Writable> extends 
 	 * @param compressionType The compression type to use.
 	 */
 	public SequenceFileWriter(String compressionCodecName,
-			SequenceFile.CompressionType compressionType) {
+							  SequenceFile.CompressionType compressionType) {
 		this.compressionCodecName = compressionCodecName;
 		this.compressionType = compressionType;
 	}
@@ -90,7 +90,7 @@ public class SequenceFileWriter<K extends Writable, V extends Writable> extends 
 
 		CompressionCodec codec = null;
 
-		Configuration conf = fs.getConf();
+		Configuration conf = new Configuration();
 
 		if (!compressionCodecName.equals("None")) {
 			CompressionCodecFactory codecFactory = new CompressionCodecFactory(conf);
@@ -102,7 +102,7 @@ public class SequenceFileWriter<K extends Writable, V extends Writable> extends 
 
 		// the non-deprecated constructor syntax is only available in recent hadoop versions...
 		writer = SequenceFile.createWriter(conf,
-				getStream(),
+				new FSDataOutputStream(getStream(), null),
 				keyClass,
 				valueClass,
 				compressionType,
