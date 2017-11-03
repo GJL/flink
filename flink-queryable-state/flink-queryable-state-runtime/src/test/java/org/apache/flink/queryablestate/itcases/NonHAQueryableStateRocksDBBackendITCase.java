@@ -29,7 +29,6 @@ import org.junit.rules.TemporaryFolder;
 /**
  * Several integration tests for queryable state using the {@link RocksDBStateBackend}.
  */
-@Ignore
 public class NonHAQueryableStateRocksDBBackendITCase extends NonHAAbstractQueryableStateTestBase {
 
 	@Rule

@@ -22,7 +22,6 @@ import org.apache.flink.configuration.ConfigConstants;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.configuration.QueryableStateOptions;
 import org.apache.flink.configuration.TaskManagerOptions;
-import org.apache.flink.queryablestate.client.QueryableStateClient;
 import org.apache.flink.runtime.jobmanager.HighAvailabilityMode;
 import org.apache.flink.runtime.testingUtils.TestingCluster;
 
@@ -54,7 +53,7 @@ public abstract class NonHAAbstractQueryableStateTestBase extends AbstractQuerya
 			cluster = new TestingCluster(config, false);
 			cluster.start(true);
 
-			client = new QueryableStateClient("localhost", proxyPortRangeStart);
+			// client = new QueryableStateClient("localhost", proxyPortRangeStart);
 
 			// verify that we are not in HA mode
 			Assert.assertTrue(cluster.haMode() == HighAvailabilityMode.NONE);
@@ -73,6 +72,9 @@ public abstract class NonHAAbstractQueryableStateTestBase extends AbstractQuerya
 			e.printStackTrace();
 			fail(e.getMessage());
 		}
-		client.shutdown();
+
+		if (client != null) {
+			client.shutdown();
+		}
 	}
 }
