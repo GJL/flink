@@ -18,27 +18,29 @@
 
 package org.apache.flink.runtime.rest.messages.json;
 
+import org.apache.flink.runtime.clusterframework.types.ResourceID;
 import org.apache.flink.runtime.instance.InstanceID;
 
-import org.apache.flink.shaded.jackson2.com.fasterxml.jackson.core.JsonGenerator;
-import org.apache.flink.shaded.jackson2.com.fasterxml.jackson.databind.SerializerProvider;
-import org.apache.flink.shaded.jackson2.com.fasterxml.jackson.databind.ser.std.StdSerializer;
+import org.apache.flink.shaded.jackson2.com.fasterxml.jackson.core.JsonParser;
+import org.apache.flink.shaded.jackson2.com.fasterxml.jackson.databind.DeserializationContext;
+import org.apache.flink.shaded.jackson2.com.fasterxml.jackson.databind.deser.std.StdDeserializer;
 
 import java.io.IOException;
 
 /**
- * Json serializer for {@link InstanceID}.
+ * Json deserializer for {@link InstanceID}.
  */
-public class InstanceIDSerializer extends StdSerializer<InstanceID> {
+public class ResourceIDDeserializer extends StdDeserializer<ResourceID> {
 
-	private static final long serialVersionUID = 5798852092159615938L;
+	private static final long serialVersionUID = -9058463293913469849L;
 
-	protected InstanceIDSerializer() {
+	protected ResourceIDDeserializer() {
 		super(InstanceID.class);
 	}
 
 	@Override
-	public void serialize(InstanceID value, JsonGenerator gen, SerializerProvider provider) throws IOException {
-		gen.writeString(value.toString());
+	public ResourceID deserialize(JsonParser p, DeserializationContext ctx) throws IOException {
+		return new ResourceID(p.getValueAsString());
 	}
+
 }
