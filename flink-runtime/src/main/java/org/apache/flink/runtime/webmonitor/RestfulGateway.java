@@ -21,8 +21,10 @@ package org.apache.flink.runtime.webmonitor;
 import org.apache.flink.api.common.JobID;
 import org.apache.flink.api.common.time.Time;
 import org.apache.flink.api.java.tuple.Tuple2;
+import org.apache.flink.runtime.client.SerializedJobExecutionResult;
 import org.apache.flink.runtime.clusterframework.types.ResourceID;
 import org.apache.flink.runtime.executiongraph.AccessExecutionGraph;
+import org.apache.flink.runtime.jobmaster.JobExecutionResult;
 import org.apache.flink.runtime.messages.FlinkJobNotFoundException;
 import org.apache.flink.runtime.messages.webmonitor.ClusterOverview;
 import org.apache.flink.runtime.messages.webmonitor.MultipleJobsDetails;
@@ -92,4 +94,42 @@ public interface RestfulGateway extends RpcGateway {
 	 * @return Future containing the collection of instance ids and the corresponding metric query service path
 	 */
 	CompletableFuture<Collection<Tuple2<ResourceID, String>>> requestTaskManagerMetricQueryServicePaths(@RpcTimeout Time timeout);
+
+	/**
+	 * Returns the {@link SerializedJobExecutionResult} for a job, or in case the job failed, the
+	 * failure cause.
+	 *
+	 * @param jobId ID of the job that we are interested in.
+	 * @param timeout Timeout for the asynchronous operation.
+	 *
+	 * @see #isJobExecutionResultPresent(JobID, Time)
+	 *
+	 * @return {@link CompletableFuture} containing the {@link JobExecutionResult} or a
+	 * {@link Throwable} which represents the failure cause. If there is no result, the future will
+	 * be completed exceptionally with
+	 * {@link org.apache.flink.runtime.messages.JobExecutionResultNotFoundException}
+	 */
+	default CompletableFuture<JobExecutionResult> getJobExecutionResult(
+			JobID jobId,
+			@RpcTimeout Time timeout) {
+		throw new UnsupportedOperationException();
+	}
+
+	/**
+	 * Tests if the {@link SerializedJobExecutionResult} is present.
+	 *
+	 * @param jobId ID of the job that we are interested in.
+	 * @param timeout Timeout for the asynchronous operation.
+	 *
+	 * @see #getJobExecutionResult(JobID, Time)
+	 *
+	 * @return {@link CompletableFuture} containing {@code true} when then the
+	 * {@link SerializedJobExecutionResult} is present. The future is completed exceptionally with
+	 * {@link FlinkJobNotFoundException} if there is no job running with the specified ID, or if the
+	 * result has expired.
+	 */
+	default CompletableFuture<Boolean> isJobExecutionResultPresent(
+			JobID jobId, @RpcTimeout Time timeout) {
+		throw new UnsupportedOperationException();
+	}
 }

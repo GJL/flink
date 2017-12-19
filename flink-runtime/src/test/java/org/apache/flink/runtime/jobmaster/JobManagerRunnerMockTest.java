@@ -18,7 +18,6 @@
 
 package org.apache.flink.runtime.jobmaster;
 
-import org.apache.flink.api.common.JobExecutionResult;
 import org.apache.flink.api.common.JobID;
 import org.apache.flink.api.common.time.Time;
 import org.apache.flink.configuration.Configuration;
@@ -37,6 +36,7 @@ import org.apache.flink.runtime.metrics.MetricRegistryImpl;
 import org.apache.flink.runtime.metrics.MetricRegistryConfiguration;
 import org.apache.flink.runtime.rpc.FatalErrorHandler;
 import org.apache.flink.runtime.rpc.RpcService;
+import org.apache.flink.util.SerializedThrowable;
 import org.apache.flink.util.TestLogger;
 import org.junit.After;
 import org.junit.Before;
@@ -135,7 +135,7 @@ public class JobManagerRunnerMockTest extends TestLogger {
 		assertTrue(!jobCompletion.isJobFailed());
 
 		verify(jobManager).start(any(JobMasterId.class), any(Time.class));
-		
+
 		runner.shutdown();
 		verify(leaderElectionService).stop();
 		verify(jobManager).shutDown();
@@ -192,7 +192,10 @@ public class JobManagerRunnerMockTest extends TestLogger {
 		assertTrue(!jobCompletion.isJobFinished());
 
 		// runner been told by JobManager that job is failed
-		runner.jobFailed(new Exception("failed manually"));
+		runner.jobFailed(new JobExecutionResult.Builder()
+			.jobId(new JobID())
+			.serializedThrowable(new SerializedThrowable(new Exception("failed manually")))
+			.build());
 
 		assertTrue(jobCompletion.isJobFailed());
 		verify(leaderElectionService).stop();
@@ -251,11 +254,11 @@ public class JobManagerRunnerMockTest extends TestLogger {
 		}
 
 		@Override
-		public void jobFailed(Throwable cause) {
+		public void jobFailed(JobExecutionResult result) {
 			checkArgument(!isJobFinished(), "job finished already");
 			checkArgument(!isJobFailed(), "job failed already");
 
-			this.failedCause = cause;
+			this.failedCause = result.getSerializedThrowable().get();
 		}
 
 		@Override
@@ -268,7 +271,10 @@ public class JobManagerRunnerMockTest extends TestLogger {
 
 		@Override
 		public void onFatalError(Throwable exception) {
-			jobFailed(exception);
+			checkArgument(!isJobFinished(), "job finished already");
+			checkArgument(!isJobFailed(), "job failed already");
+
+			this.failedCause = exception;
 		}
 
 		boolean isJobFinished() {
