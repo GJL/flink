@@ -18,9 +18,19 @@
 
 package org.apache.flink.runtime.rest.util;
 
+import org.apache.flink.runtime.rest.messages.json.SerializedThrowableDeserializer;
+import org.apache.flink.runtime.rest.messages.json.SerializedThrowableSerializer;
+import org.apache.flink.runtime.rest.messages.json.SerializedValueDeserializer;
+import org.apache.flink.runtime.rest.messages.json.SerializedValueSerializer;
+import org.apache.flink.util.SerializedThrowable;
+import org.apache.flink.util.SerializedValue;
+
+import org.apache.flink.shaded.jackson2.com.fasterxml.jackson.core.type.TypeReference;
 import org.apache.flink.shaded.jackson2.com.fasterxml.jackson.databind.DeserializationFeature;
+import org.apache.flink.shaded.jackson2.com.fasterxml.jackson.databind.JavaType;
 import org.apache.flink.shaded.jackson2.com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.flink.shaded.jackson2.com.fasterxml.jackson.databind.SerializationFeature;
+import org.apache.flink.shaded.jackson2.com.fasterxml.jackson.databind.module.SimpleModule;
 
 /**
  * This class contains utilities for mapping requests and responses to/from JSON.
@@ -33,10 +43,26 @@ public class RestMapperUtils {
 		objectMapper.enable(
 			DeserializationFeature.FAIL_ON_IGNORED_PROPERTIES,
 			DeserializationFeature.FAIL_ON_NULL_FOR_PRIMITIVES,
-			DeserializationFeature.FAIL_ON_READING_DUP_TREE_KEY,
-			DeserializationFeature.FAIL_ON_MISSING_CREATOR_PROPERTIES);
+			DeserializationFeature.FAIL_ON_READING_DUP_TREE_KEY);
 		objectMapper.disable(
 			SerializationFeature.FAIL_ON_EMPTY_BEANS);
+
+		final SimpleModule jacksonFlinkModule = new SimpleModule();
+
+		final JavaType serializedValueWildcardType = objectMapper
+			.getTypeFactory()
+			.constructType(new TypeReference<SerializedValue<?>>() {
+			});
+
+		jacksonFlinkModule.addSerializer(new SerializedValueSerializer(serializedValueWildcardType));
+		jacksonFlinkModule.addDeserializer(
+			SerializedValue.class,
+			new SerializedValueDeserializer(serializedValueWildcardType));
+
+		jacksonFlinkModule.addSerializer(new SerializedThrowableSerializer());
+		jacksonFlinkModule.addDeserializer(SerializedThrowable.class, new SerializedThrowableDeserializer());
+
+		objectMapper.registerModule(jacksonFlinkModule);
 	}
 
 	/**
