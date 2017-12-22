@@ -18,6 +18,7 @@
 
 package org.apache.flink.runtime.jobmanager;
 
+import org.apache.flink.api.common.JobExecutionResult;
 import org.apache.flink.api.common.JobID;
 import org.apache.flink.runtime.jobgraph.JobGraph;
 
@@ -39,6 +40,9 @@ public class SubmittedJobGraph implements Serializable {
 
 	/** The {@link JobInfo}. */
 	private final JobInfo jobInfo;
+
+	/** Used to compute the value for {@link JobExecutionResult#netRuntime} */
+	private final long submissionTime = System.currentTimeMillis();
 
 	/**
 	 * Creates a {@link SubmittedJobGraph}.
@@ -68,8 +72,13 @@ public class SubmittedJobGraph implements Serializable {
 	/**
 	 * Returns the {@link JobInfo} of the client who submitted the {@link JobGraph}.
 	 */
+	@Nullable
 	public JobInfo getJobInfo() throws Exception {
 		return jobInfo;
+	}
+
+	public long getSubmissionTime() {
+		return submissionTime;
 	}
 
 	@Override
