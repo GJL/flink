@@ -30,7 +30,9 @@ import java.util.Collection;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 
-
+/**
+ * Tests for {@link SavepointResponseBody}.
+ */
 @RunWith(Parameterized.class)
 public class SavepointResponseBodyTest extends RestResponseMarshallingTestBase<SavepointResponseBody> {
 
