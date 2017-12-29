@@ -208,7 +208,7 @@ class AkkaInvocationHandler implements InvocationHandler, AkkaBasedEndpoint, Rpc
 			tell(rpcInvocation);
 
 			result = null;
-		} else if (Objects.equals(returnType,CompletableFuture.class)) {
+		} else if (Objects.equals(returnType, CompletableFuture.class)) {
 			// execute an asynchronous call
 			result = ask(rpcInvocation, futureTimeout);
 		} else {

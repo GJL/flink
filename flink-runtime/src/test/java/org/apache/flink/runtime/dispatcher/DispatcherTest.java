@@ -32,6 +32,9 @@ import org.apache.flink.runtime.highavailability.RunningJobsRegistry;
 import org.apache.flink.runtime.highavailability.TestingHighAvailabilityServices;
 import org.apache.flink.runtime.jobgraph.JobGraph;
 import org.apache.flink.runtime.jobgraph.JobVertex;
+import org.apache.flink.runtime.jobgraph.tasks.CheckpointCoordinatorConfiguration;
+import org.apache.flink.runtime.jobgraph.tasks.ExternalizedCheckpointSettings;
+import org.apache.flink.runtime.jobgraph.tasks.JobCheckpointingSettings;
 import org.apache.flink.runtime.jobmanager.OnCompletionActions;
 import org.apache.flink.runtime.jobmanager.SubmittedJobGraph;
 import org.apache.flink.runtime.jobmanager.SubmittedJobGraphStore;
@@ -64,6 +67,7 @@ import org.junit.rules.TemporaryFolder;
 import org.junit.rules.TestName;
 import org.mockito.Mockito;
 
+import java.util.Collections;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
@@ -98,6 +102,8 @@ public class DispatcherTest extends TestLogger {
 	@Rule
 	public TestName name = new TestName();
 
+	private JobVertex testVertex;
+
 	private JobGraph jobGraph;
 
 	private TestingFatalErrorHandler fatalErrorHandler;
@@ -129,7 +135,7 @@ public class DispatcherTest extends TestLogger {
 
 	@Before
 	public void setUp() throws Exception {
-		final JobVertex testVertex = new JobVertex("testVertex");
+		testVertex = new JobVertex("testVertex");
 		testVertex.setInvokableClass(NoOpInvokable.class);
 		jobGraph = new JobGraph(TEST_JOB_ID, "testJob", testVertex);
 		jobGraph.setAllowQueuedScheduling(true);
@@ -294,6 +300,29 @@ public class DispatcherTest extends TestLogger {
 				.get()
 				.isSuccess(),
 			equalTo(true));
+	}
+
+	@Test
+	public void name() throws Exception {
+		dispatcher.recoverJobsEnabled.set(false);
+		jobGraph.setSnapshotSettings(new JobCheckpointingSettings(
+			Collections.singletonList(testVertex.getID()),
+			Collections.singletonList(testVertex.getID()),
+			Collections.singletonList(testVertex.getID()),
+			new CheckpointCoordinatorConfiguration(10, 10, 1, 1,
+				ExternalizedCheckpointSettings.none(), true),
+			null));
+
+		dispatcherLeaderElectionService.isLeader(UUID.randomUUID()).get();
+
+		final DispatcherGateway dispatcherGateway = dispatcher.getSelfGateway(DispatcherGateway.class);
+
+		dispatcherGateway.submitJob(jobGraph, TIMEOUT).get();
+		jobMasterLeaderElectionService.isLeader(UUID.randomUUID()).get();
+
+
+
+		dispatcher.triggerSavepoint(TEST_JOB_ID, "/tmp", TIMEOUT).get();
 	}
 
 	private static class TestingDispatcher extends Dispatcher {

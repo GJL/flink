@@ -16,21 +16,12 @@
  * limitations under the License.
  */
 
-package org.apache.flink.runtime.rest;
+package org.apache.flink.runtime.rest.messages.queue;
 
-import org.apache.flink.runtime.rest.handler.RestHandlerException;
+public interface AsynchronouslyCreatedResource<T> {
 
-import org.apache.flink.shaded.netty4.io.netty.handler.codec.http.HttpResponseStatus;
+	QueueStatus queueStatus();
 
-/**
- * A special exception that indicates that an element was not found and that the
- * request should be answered with a {@code 404} return code.
- */
-public class NotFoundException extends RestHandlerException {
+	T resource();
 
-	private static final long serialVersionUID = -4036006746423754639L;
-
-	public NotFoundException(String message) {
-		super(message, HttpResponseStatus.NOT_FOUND);
-	}
 }

@@ -22,6 +22,7 @@ import org.apache.flink.runtime.jobmaster.JobExecutionResult;
 import org.apache.flink.runtime.rest.messages.ResponseBody;
 import org.apache.flink.runtime.rest.messages.json.JobExecutionResultDeserializer;
 import org.apache.flink.runtime.rest.messages.json.JobExecutionResultSerializer;
+import org.apache.flink.runtime.rest.messages.queue.AsynchronouslyCreatedResource;
 import org.apache.flink.runtime.rest.messages.queue.QueueStatus;
 
 import org.apache.flink.shaded.jackson2.com.fasterxml.jackson.annotation.JsonCreator;
@@ -38,7 +39,8 @@ import static java.util.Objects.requireNonNull;
  *
  * @see org.apache.flink.runtime.rest.handler.job.JobExecutionResultHandler
  */
-public class JobExecutionResultResponseBody implements ResponseBody {
+public class JobExecutionResultResponseBody
+		implements ResponseBody, AsynchronouslyCreatedResource<JobExecutionResult> {
 
 	@JsonProperty(value = "status", required = true)
 	private final QueueStatus status;
@@ -77,4 +79,13 @@ public class JobExecutionResultResponseBody implements ResponseBody {
 		return jobExecutionResult;
 	}
 
+	@Override
+	public QueueStatus queueStatus() {
+		return status;
+	}
+
+	@Override
+	public JobExecutionResult resource() {
+		return jobExecutionResult;
+	}
 }

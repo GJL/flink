@@ -19,29 +19,33 @@
 package org.apache.flink.runtime.rest.messages.job.savepoints;
 
 import org.apache.flink.runtime.rest.messages.RestResponseMarshallingTestBase;
+import org.apache.flink.runtime.rest.messages.queue.QueueStatus;
 
 import static org.junit.Assert.assertEquals;
 
 /**
- * Tests for {@link SavepointTriggerResponseBody}.
+ * Tests for the {@link SavepointResponseBody}.
  */
-public class SavepointTriggerResponseBodyTest
-		extends RestResponseMarshallingTestBase<SavepointTriggerResponseBody> {
+public class SavepointInfoBodyTest extends RestResponseMarshallingTestBase<SavepointResponseBody> {
 
 	@Override
-	protected Class<SavepointTriggerResponseBody> getTestResponseClass() {
-		return SavepointTriggerResponseBody.class;
+	protected Class<SavepointResponseBody> getTestResponseClass() {
+		return SavepointResponseBody.class;
 	}
 
 	@Override
-	protected SavepointTriggerResponseBody getTestResponseInstance() {
-		return new SavepointTriggerResponseBody(new SavepointTriggerId());
+	protected SavepointResponseBody getTestResponseInstance() throws Exception {
+		return new SavepointResponseBody(QueueStatus.inProgress(), new SavepointInfo(
+			new SavepointTriggerId(),
+			"/tmp",
+			null));
 	}
 
 	@Override
-	protected void assertOriginalEqualsToUnmarshalled(
-			final SavepointTriggerResponseBody expected,
-			final SavepointTriggerResponseBody actual) {
-		assertEquals(expected.getSavepointTriggerId(), actual.getSavepointTriggerId());
+	protected void assertOriginalEqualsToUnmarshalled(final SavepointResponseBody expected, final SavepointResponseBody actual) {
+		assertEquals(expected.getStatus(), actual.getStatus());
+		assertEquals(expected.getSavepoint().getRequestId(), actual.getSavepoint().getRequestId());
+		assertEquals(expected.getSavepoint().getFailureCause(), actual.getSavepoint().getFailureCause());
 	}
+
 }
