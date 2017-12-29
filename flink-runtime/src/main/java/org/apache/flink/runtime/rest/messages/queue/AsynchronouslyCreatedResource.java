@@ -18,13 +18,15 @@
 
 package org.apache.flink.runtime.rest.messages.queue;
 
+import org.apache.flink.runtime.rest.messages.ResponseBody;
+
 import javax.annotation.Nullable;
 
 /**
  * Interface for REST resources that are created asynchronously.
  * @param <T> The type of the resource.
  */
-public interface AsynchronouslyCreatedResource<T> {
+public interface AsynchronouslyCreatedResource<T> extends ResponseBody {
 
 	/**
 	 * Retuns the status of the resource creation.

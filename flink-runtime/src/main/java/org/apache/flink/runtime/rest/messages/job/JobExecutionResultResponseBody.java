@@ -40,7 +40,7 @@ import static java.util.Objects.requireNonNull;
  * @see org.apache.flink.runtime.rest.handler.job.JobExecutionResultHandler
  */
 public class JobExecutionResultResponseBody
-		implements ResponseBody, AsynchronouslyCreatedResource<JobExecutionResult> {
+		implements AsynchronouslyCreatedResource<JobExecutionResult> {
 
 	@JsonProperty(value = "status", required = true)
 	private final QueueStatus status;

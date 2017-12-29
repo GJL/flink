@@ -45,7 +45,6 @@ import org.apache.flink.runtime.rest.messages.JobMessageParameters;
 import org.apache.flink.runtime.rest.messages.JobTerminationHeaders;
 import org.apache.flink.runtime.rest.messages.JobTerminationMessageParameters;
 import org.apache.flink.runtime.rest.messages.JobsOverviewHeaders;
-import org.apache.flink.runtime.rest.messages.ResponseBody;
 import org.apache.flink.runtime.rest.messages.TerminationModeQueryParameter;
 import org.apache.flink.runtime.rest.messages.job.JobExecutionResultHeaders;
 import org.apache.flink.runtime.rest.messages.job.JobSubmitHeaders;
@@ -76,9 +75,11 @@ import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 import static java.util.Objects.requireNonNull;
 
@@ -199,8 +200,9 @@ public class RestClusterClient extends ClusterClient {
 		}
 	}
 
-	private <R, T extends AsynchronouslyCreatedResource<R> & ResponseBody> R waitForResource(
-			final SupplierWithException<CompletableFuture<T>, IOException> supplier) throws Exception {
+	private <R, T extends AsynchronouslyCreatedResource<R>> R waitForResource(
+			final SupplierWithException<CompletableFuture<T>, IOException> supplier)
+			throws IOException, InterruptedException, ExecutionException, TimeoutException {
 		T asynchronouslyCreatedResource;
 		long attempt = 0;
 		do {

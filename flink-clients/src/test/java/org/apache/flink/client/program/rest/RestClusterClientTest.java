@@ -343,7 +343,12 @@ public class RestClusterClientTest extends TestLogger {
 				try {
 					restClusterClient.triggerSavepoint(id, null).get();
 					fail("Expected exception not thrown.");
-				} catch (ExecutionException ignored2) {
+				} catch (ExecutionException e) {
+					final Throwable cause = e.getCause();
+					assertThat(cause, instanceOf(SerializedThrowable.class));
+					assertThat(((SerializedThrowable) cause)
+						.deserializeError(ClassLoader.getSystemClassLoader())
+						.getMessage(), equalTo("expected"));
 				}
 			}
 		}

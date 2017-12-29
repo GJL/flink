@@ -18,7 +18,6 @@
 
 package org.apache.flink.runtime.rest.messages.job.savepoints;
 
-import org.apache.flink.runtime.rest.messages.ResponseBody;
 import org.apache.flink.runtime.rest.messages.queue.AsynchronouslyCreatedResource;
 import org.apache.flink.runtime.rest.messages.queue.QueueStatus;
 
@@ -33,7 +32,7 @@ import static java.util.Objects.requireNonNull;
 /**
  * Status of the savepoint and savepoint information if available.
  */
-public class SavepointResponseBody implements ResponseBody, AsynchronouslyCreatedResource<SavepointInfo> {
+public class SavepointResponseBody implements AsynchronouslyCreatedResource<SavepointInfo> {
 
 	private static final String FIELD_NAME_STATUS = "status";
 
