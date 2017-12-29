@@ -18,10 +18,23 @@
 
 package org.apache.flink.runtime.rest.messages.queue;
 
+import javax.annotation.Nullable;
+
+/**
+ * Interface for REST resources that are created asynchronously.
+ * @param <T> The type of the resource.
+ */
 public interface AsynchronouslyCreatedResource<T> {
 
+	/**
+	 * Retuns the status of the resource creation.
+	 */
 	QueueStatus queueStatus();
 
+	/**
+	 * Returns the resource if it is available, {@code null} otherwise.
+	 */
+	@Nullable
 	T resource();
 
 }
