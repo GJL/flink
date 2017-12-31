@@ -18,6 +18,7 @@
 
 package org.apache.flink.runtime.rest.handler.job.savepoints;
 
+import org.apache.flink.annotation.VisibleForTesting;
 import org.apache.flink.api.common.JobID;
 import org.apache.flink.api.common.time.Time;
 import org.apache.flink.configuration.CoreOptions;
@@ -52,6 +53,7 @@ import org.apache.flink.shaded.netty4.io.netty.handler.codec.http.HttpResponseSt
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
+import javax.annotation.concurrent.Immutable;
 import javax.annotation.concurrent.ThreadSafe;
 
 import java.util.Map;
@@ -71,7 +73,7 @@ public class SavepointHandlers {
 	private final CompletedCheckpointCache completedCheckpointCache = new CompletedCheckpointCache();
 
 	@Nullable
-	private final String defaultSavepointDir;
+	private String defaultSavepointDir;
 
 	public SavepointHandlers(@Nullable final String defaultSavepointDir) {
 		this.defaultSavepointDir = defaultSavepointDir;
@@ -102,10 +104,9 @@ public class SavepointHandlers {
 			if (requestedTargetDirectory == null && defaultSavepointDir == null) {
 				return FutureUtils.completedExceptionally(
 					new RestHandlerException(
-						String.format("Savepoint directory could not be determined. " +
-								"Set property [%s] or set config key [%s].",
-							SavepointTriggerRequestBody.FIELD_NAME_TARGET_DIRECTORY,
-							CoreOptions.SAVEPOINT_DIRECTORY.key()),
+						String.format("Config key [%s] is not set. Property [%s] must be provided.",
+							CoreOptions.SAVEPOINT_DIRECTORY.key(),
+							SavepointTriggerRequestBody.FIELD_NAME_TARGET_DIRECTORY),
 						HttpResponseStatus.BAD_REQUEST));
 			}
 
@@ -160,7 +161,6 @@ public class SavepointHandlers {
 
 			if (completedCheckpoint != null) {
 				final String externalPointer = completedCheckpoint.getExternalPointer();
-				checkState(externalPointer != null, "External pointer must not be null");
 				return CompletableFuture.completedFuture(new SavepointResponseBody(
 					QueueStatus.completed(),
 					new SavepointInfo(savepointTriggerId, externalPointer, null)));
@@ -229,14 +229,20 @@ public class SavepointHandlers {
 				throw completedCheckpointOrError.left();
 			} else {
 				final CompletedCheckpoint completedCheckpoint = completedCheckpointOrError.right();
-				if (completedCheckpoint.getExternalPointer() == null) {
-					throw new RuntimeException("Savepoint has not been persisted.");
-				}
+				checkState(
+					completedCheckpoint.getExternalPointer() != null,
+					"Savepoint external pointer must not be null");
 				return completedCheckpoint;
 			}
 		}
 	}
 
+	/**
+	 * A pair of {@link JobID} and {@link SavepointTriggerId} used as a key to a map.
+	 *
+	 * @see CompletedCheckpointCache
+	 */
+	@Immutable
 	static class SavepointKey {
 
 		private final SavepointTriggerId savepointTriggerId;
@@ -277,7 +283,16 @@ public class SavepointHandlers {
 		}
 	}
 
+	/**
+	 * Exception that indicates that there is no ongoing or completed checkpoint for a given
+	 * {@link JobID} and {@link SavepointTriggerId} pair.
+	 */
 	static class UnknownSavepointTriggerId extends Exception {
 		private static final long serialVersionUID = 1L;
+	}
+
+	@VisibleForTesting
+	void setDefaultSavepointDir(@Nullable final String defaultSavepointDir) {
+		this.defaultSavepointDir = defaultSavepointDir;
 	}
 }

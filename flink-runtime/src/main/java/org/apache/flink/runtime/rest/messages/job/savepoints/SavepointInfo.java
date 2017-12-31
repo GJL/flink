@@ -30,6 +30,9 @@ import org.apache.flink.shaded.jackson2.com.fasterxml.jackson.databind.annotatio
 
 import javax.annotation.Nullable;
 
+import static java.util.Objects.requireNonNull;
+import static org.apache.flink.util.Preconditions.checkArgument;
+
 /**
  * Represents information about a finished savepoint.
  */
@@ -62,8 +65,12 @@ public class SavepointInfo {
 			@JsonProperty(FIELD_NAME_FAILURE_CAUSE)
 			@JsonDeserialize(using = SerializedThrowableDeserializer.class)
 			@Nullable final SerializedThrowable failureCause) {
+		checkArgument(
+			location != null ^ failureCause != null,
+			"Either location or failureCause must be set");
+
+		this.requestId = requireNonNull(requestId);
 		this.location = location;
-		this.requestId = requestId;
 		this.failureCause = failureCause;
 	}
 
