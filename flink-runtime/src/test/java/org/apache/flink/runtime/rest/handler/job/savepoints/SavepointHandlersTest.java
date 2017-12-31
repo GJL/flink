@@ -232,7 +232,6 @@ public class SavepointHandlersTest {
 			savepointStatusRequest(savepointTriggerId),
 			mockRestfulGateway).get();
 
-
 		assertThat(savepointResponseBody.getStatus().getStatusId(), equalTo(QueueStatus.StatusId.COMPLETED));
 		assertThat(savepointResponseBody.getSavepoint(), notNullValue());
 		assertThat(savepointResponseBody.getSavepoint().getFailureCause(), notNullValue());
