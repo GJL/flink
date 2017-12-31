@@ -67,6 +67,48 @@ import static org.apache.flink.util.Preconditions.checkState;
 
 /**
  * HTTP handlers for asynchronous triggering of savepoints.
+ *
+ * <p>Drawing savepoints is a potentially long-running operation. To avoid blocking HTTP
+ * connections, savepoints must be drawn in two steps. First, an HTTP request is issued to trigger
+ * the savepoint asynchronously. The request will be assigned a {@link SavepointTriggerId},
+ * which is returned in the response body. Next, the returned id should be used to poll the status
+ * of the savepoint until it is finished.
+ *
+ * <p>A savepoint is triggered by sending an HTTP {@code POST} request to {@code /jobs/:jobid/savepoints}.
+ * The HTTP request may contain a JSON body to specify the target directory of the savepoint, e.g.,
+ * <pre>
+ * { "target-directory": "/tmp" }
+ * </pre>
+ * If the body is omitted, or the field {@code target-property} is {@code null}, the default
+ * savepoint directory as specified by {@link CoreOptions#SAVEPOINT_DIRECTORY} will be used.
+ * As written above, the response will contain a request id, e.g.,
+ * <pre>
+ * { "request-id": "7d273f5a62eb4730b9dea8e833733c1e" }
+ * </pre>
+ *
+ * <p>To poll for the status of an ongoing savepoint, an HTTP {@code GET} request is issued to
+ * {@code /jobs/:jobid/savepoints/:savepointtriggerid}. If the specified savepoint is still ongoing,
+ * the response will be
+ * <pre>
+ * {
+ *     "status": {
+ *         "id": "IN_PROGRESS"
+ *     }
+ * }
+ * </pre>
+ * If the specified savepoint has completed, the status id will transition to {@code COMPLETED}, and
+ * the response will additionally contain information about the savepoint, such as the location:
+ * <pre>
+ * {
+ *     "status": {
+ *         "id": "COMPLETED"
+ *     },
+ *     "savepoint": {
+ *         "request-id": "7d273f5a62eb4730b9dea8e833733c1e",
+ *         "location": "/tmp/savepoint-d9813b-8a68e674325b"
+ *     }
+ * }
+ * </pre>
  */
 public class SavepointHandlers {
 
@@ -173,7 +215,9 @@ public class SavepointHandlers {
 	/**
 	 * Cache to manage ongoing checkpoints.
 	 *
-	 * <p>Completed checkpoints will be removed from the cache automatically after a fixed timeout.
+	 * <p>The cache allows to register an ongoing checkpoint in the form of a
+	 * {@code CompletableFuture<CompletedCheckpoint>}. Completed checkpoints will be removed from
+	 * the cache automatically after a fixed timeout.
 	 */
 	@ThreadSafe
 	static class CompletedCheckpointCache {
@@ -238,7 +282,8 @@ public class SavepointHandlers {
 	}
 
 	/**
-	 * A pair of {@link JobID} and {@link SavepointTriggerId} used as a key to a map.
+	 * A pair of {@link JobID} and {@link SavepointTriggerId} used as a key to a hash based
+	 * collection.
 	 *
 	 * @see CompletedCheckpointCache
 	 */
