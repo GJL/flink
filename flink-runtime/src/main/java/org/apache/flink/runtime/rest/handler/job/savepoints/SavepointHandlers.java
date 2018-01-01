@@ -63,7 +63,6 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 
 import static java.util.Objects.requireNonNull;
-import static org.apache.flink.util.Preconditions.checkState;
 
 /**
  * HTTP handlers for asynchronous triggering of savepoints.
@@ -74,8 +73,9 @@ import static org.apache.flink.util.Preconditions.checkState;
  * which is returned in the response body. Next, the returned id should be used to poll the status
  * of the savepoint until it is finished.
  *
- * <p>A savepoint is triggered by sending an HTTP {@code POST} request to {@code /jobs/:jobid/savepoints}.
- * The HTTP request may contain a JSON body to specify the target directory of the savepoint, e.g.,
+ * <p>A savepoint is triggered by sending an HTTP {@code POST} request to
+ * {@code /jobs/:jobid/savepoints}. The HTTP request may contain a JSON body to specify the target
+ * directory of the savepoint, e.g.,
  * <pre>
  * { "target-directory": "/tmp" }
  * </pre>
@@ -186,26 +186,29 @@ public class SavepointHandlers {
 			final JobID jobId = request.getPathParameter(JobIDPathParameter.class);
 			final SavepointTriggerId savepointTriggerId = request.getPathParameter(
 				SavepointTriggerIdPathParameter.class);
-			@Nullable final CompletedCheckpoint completedCheckpoint;
+			final Either<Throwable, CompletedCheckpoint> completedCheckpointOrError;
 			try {
-				completedCheckpoint = completedCheckpointCache.get(
-					SavepointKey.of(savepointTriggerId, jobId));
+				completedCheckpointOrError = completedCheckpointCache.get(SavepointKey.of(
+					savepointTriggerId, jobId));
 			} catch (UnknownSavepointTriggerId e) {
 				return FutureUtils.completedExceptionally(
 					new NotFoundException("Savepoint not found. Savepoint trigger id: " +
-						savepointTriggerId +
-						", job id: " + jobId));
-			} catch (Throwable throwable) {
-				return CompletableFuture.completedFuture(new SavepointResponseBody(
-					QueueStatus.completed(),
-					new SavepointInfo(savepointTriggerId, null, new SerializedThrowable(throwable))));
+						savepointTriggerId + ", job id: " + jobId));
 			}
 
-			if (completedCheckpoint != null) {
-				final String externalPointer = completedCheckpoint.getExternalPointer();
-				return CompletableFuture.completedFuture(new SavepointResponseBody(
-					QueueStatus.completed(),
-					new SavepointInfo(savepointTriggerId, externalPointer, null)));
+			if (completedCheckpointOrError != null) {
+				if (completedCheckpointOrError.isLeft()) {
+					return CompletableFuture.completedFuture(new SavepointResponseBody(
+						QueueStatus.completed(),
+						new SavepointInfo(savepointTriggerId, null, new SerializedThrowable(
+							completedCheckpointOrError.left()))));
+				} else {
+					final CompletedCheckpoint completedCheckpoint = completedCheckpointOrError.right();
+					final String externalPointer = completedCheckpoint.getExternalPointer();
+					return CompletableFuture.completedFuture(new SavepointResponseBody(
+						QueueStatus.completed(),
+						new SavepointInfo(savepointTriggerId, externalPointer, null)));
+				}
 			} else {
 				return CompletableFuture.completedFuture(SavepointResponseBody.inProgress());
 			}
@@ -252,32 +255,21 @@ public class SavepointHandlers {
 		}
 
 		/**
-		 * Returns the CompletedCheckpoint if ready, otherwise {@code null}.
+		 * Returns the CompletedCheckpoint or a Throwable if the CompletableFuture finished,
+		 * otherwise {@code null}.
 		 *
 		 * @throws UnknownSavepointTriggerId If the savepoint is not found, and there is no ongoing
 		 *                                   checkpoint under the provided key.
-		 * @throws Throwable                 If the savepoint completed with an exception.
 		 */
 		@Nullable
-		CompletedCheckpoint get(final SavepointKey savepointTriggerId)
-				throws UnknownSavepointTriggerId, Throwable {
+		Either<Throwable, CompletedCheckpoint> get(
+				final SavepointKey savepointTriggerId) throws UnknownSavepointTriggerId {
 			Either<Throwable, CompletedCheckpoint> completedCheckpointOrError = null;
 			if (!registeredSavepointTriggers.contains(savepointTriggerId)
 				&& (completedCheckpointOrError = completedCheckpoints.getIfPresent(savepointTriggerId)) == null) {
 				throw new UnknownSavepointTriggerId();
 			}
-
-			if (completedCheckpointOrError == null) {
-				return null;
-			} else if (completedCheckpointOrError.isLeft()) {
-				throw completedCheckpointOrError.left();
-			} else {
-				final CompletedCheckpoint completedCheckpoint = completedCheckpointOrError.right();
-				checkState(
-					completedCheckpoint.getExternalPointer() != null,
-					"Savepoint external pointer must not be null");
-				return completedCheckpoint;
-			}
+			return completedCheckpointOrError;
 		}
 	}
 
