@@ -225,6 +225,8 @@ public class SavepointHandlers {
 	@ThreadSafe
 	static class CompletedCheckpointCache {
 
+		private static final long COMPLETED_CHECKPOINTS_CACHE_DURATION_SECONDS = 300;
+
 		/**
 		 * Stores SavepointKeys of ongoing checkpoints.
 		 * If the checkpoint completes, it will be moved to {@link #completedCheckpoints}.
@@ -234,7 +236,7 @@ public class SavepointHandlers {
 		/** Caches completed checkpoints. */
 		private final Cache<SavepointKey, Either<Throwable, CompletedCheckpoint>> completedCheckpoints =
 			CacheBuilder.newBuilder()
-				.expireAfterWrite(300, TimeUnit.SECONDS)
+				.expireAfterWrite(COMPLETED_CHECKPOINTS_CACHE_DURATION_SECONDS, TimeUnit.SECONDS)
 				.build();
 
 		/**
