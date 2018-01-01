@@ -71,7 +71,7 @@ import static org.mockito.Mockito.when;
  */
 public class SavepointHandlersTest {
 
-	private static final CompletableFuture LOCAL_REST_ADDRESS =
+	private static final CompletableFuture<String> LOCAL_REST_ADDRESS =
 		CompletableFuture.completedFuture("localhost:12345");
 
 	private static final Time TIMEOUT = Time.seconds(10);
