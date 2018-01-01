@@ -251,7 +251,7 @@ public class SavepointHandlersTest {
 	}
 
 	private static HandlerRequest<SavepointTriggerRequestBody, SavepointTriggerMessageParameters> triggerSavepointRequest(
-		final String targetDirectory
+			final String targetDirectory
 	) throws HandlerRequestException {
 		return new HandlerRequest<>(
 			new SavepointTriggerRequestBody(targetDirectory),
@@ -261,8 +261,8 @@ public class SavepointHandlersTest {
 	}
 
 	private static HandlerRequest<EmptyRequestBody, SavepointStatusMessageParameters> savepointStatusRequest(
-		final SavepointTriggerId savepointTriggerId) throws HandlerRequestException {
-		final Map<String, String> pathParameters = new HashMap<>();
+			final SavepointTriggerId savepointTriggerId) throws HandlerRequestException {
+			final Map<String, String> pathParameters = new HashMap<>();
 		pathParameters.put(JobIDPathParameter.KEY, JOB_ID.toString());
 		pathParameters.put(SavepointTriggerIdPathParameter.KEY, savepointTriggerId.toString());
 
