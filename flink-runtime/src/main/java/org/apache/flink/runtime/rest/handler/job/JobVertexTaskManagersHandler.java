@@ -26,6 +26,7 @@ import org.apache.flink.runtime.executiongraph.AccessExecutionJobVertex;
 import org.apache.flink.runtime.executiongraph.AccessExecutionVertex;
 import org.apache.flink.runtime.executiongraph.ExecutionJobVertex;
 import org.apache.flink.runtime.jobgraph.JobVertexID;
+import org.apache.flink.runtime.rest.NotFoundException;
 import org.apache.flink.runtime.rest.handler.HandlerRequest;
 import org.apache.flink.runtime.rest.handler.RestHandlerException;
 import org.apache.flink.runtime.rest.handler.legacy.ExecutionGraphCache;
@@ -47,10 +48,12 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.Executor;
 
 /**
- * Request handler for the job vertex task managers.
+ * A request handler that provides the details of a job vertex, including id, name, and the
+ * runtime and metrics of all its subtasks aggregated by TaskManager.
  */
 public class JobVertexTaskManagersHandler extends AbstractExecutionGraphHandler<JobVertexTaskManagersInfo, JobVertexMessageParameters> {
 	private MetricFetcher<?> metricFetcher;
@@ -75,6 +78,11 @@ public class JobVertexTaskManagersHandler extends AbstractExecutionGraphHandler<
 		JobID jobID = request.getPathParameter(JobIDPathParameter.class);
 		JobVertexID jobVertexID = request.getPathParameter(JobVertexIdPathParameter.class);
 		AccessExecutionJobVertex jobVertex = executionGraph.getJobVertex(jobVertexID);
+
+		if (jobVertex == null) {
+			throw new CompletionException(new NotFoundException(
+				String.format("JobVertex %s not found", jobVertexID)));
+		}
 
 		// Build a map that groups tasks by TaskManager
 		Map<String, List<AccessExecutionVertex>> taskManagerVertices = new HashMap<>();
