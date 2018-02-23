@@ -41,6 +41,7 @@ import org.apache.flink.util.FlinkException;
 import org.apache.flink.yarn.configuration.YarnConfigOptions;
 
 import org.apache.hadoop.yarn.api.ApplicationConstants;
+import org.apache.hadoop.yarn.api.protocolrecords.RegisterApplicationMasterResponse;
 import org.apache.hadoop.yarn.api.records.Container;
 import org.apache.hadoop.yarn.api.records.ContainerLaunchContext;
 import org.apache.hadoop.yarn.api.records.ContainerStatus;
@@ -192,7 +193,14 @@ public class YarnResourceManager extends ResourceManager<YarnWorkerNode> impleme
 			restPort = -1;
 		}
 
-		resourceManagerClient.registerApplicationMaster(hostPort.f0, restPort, webInterfaceUrl);
+		final RegisterApplicationMasterResponse registerApplicationMasterResponse =
+			resourceManagerClient.registerApplicationMaster(hostPort.f0, restPort, webInterfaceUrl);
+		final List<Container> containersFromPreviousAttempts =
+			new RegisterApplicationMasterResponseReflector(log).getContainersFromPreviousAttempts(registerApplicationMasterResponse);
+
+		for (final Container container : containersFromPreviousAttempts) {
+			workerNodeMap.put(new ResourceID(container.getId().toString()), new YarnWorkerNode(container));
+		}
 
 		return resourceManagerClient;
 	}

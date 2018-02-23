@@ -195,6 +195,8 @@ public abstract class ResourceManager<WorkerType extends ResourceIDRetrievable>
 		// start a leader
 		super.start();
 
+		initialize();
+
 		leaderElectionService = highAvailabilityServices.getResourceManagerLeaderElectionService();
 
 		try {
@@ -208,8 +210,6 @@ public abstract class ResourceManager<WorkerType extends ResourceIDRetrievable>
 		} catch (Exception e) {
 			throw new ResourceManagerException("Could not start the job leader id service.", e);
 		}
-
-		initialize();
 	}
 
 	@Override
