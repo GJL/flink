@@ -26,9 +26,10 @@ import org.apache.flink.streaming.connectors.rabbitmq.common.RMQConnectionConfig
 import com.rabbitmq.client.Channel;
 import com.rabbitmq.client.Connection;
 import com.rabbitmq.client.ConnectionFactory;
-import com.rabbitmq.client.ReturnListener;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import javax.annotation.Nullable;
 
 import java.io.IOException;
 import java.util.concurrent.TimeoutException;
@@ -42,25 +43,34 @@ public class RMQSink<IN> extends RichSinkFunction<IN> {
 
 	private static final Logger LOG = LoggerFactory.getLogger(RMQSink.class);
 
+	@Nullable
 	protected final String queueName;
+
 	private final RMQConnectionConfig rmqConnectionConfig;
 	protected transient Connection connection;
 	protected transient Channel channel;
 	protected SerializationSchema<IN> schema;
 	private boolean logFailuresOnly = false;
 
+	@Nullable
 	private final RMQSinkPublishOptions<IN> publishOptions;
-	private final ReturnListener returnListener;
+
+	@Nullable
+	private final SerializableReturnListener returnListener;
 
 	/**
 	 * @param rmqConnectionConfig The RabbitMQ connection configuration {@link RMQConnectionConfig}.
 	 * @param queueName The queue to publish messages to.
 	 * @param schema A {@link SerializationSchema} for turning the Java objects received into bytes
 	 * @param publishOptions A {@link RMQSinkPublishOptions} for providing message's routing key and/or properties
-	 * @param returnListener A ReturnListener implementation object to handle returned message event
+	 * @param returnListener A SerializableReturnListener implementation object to handle returned message event
      */
-	private RMQSink(RMQConnectionConfig rmqConnectionConfig, String queueName, SerializationSchema<IN> schema,
-			RMQSinkPublishOptions<IN> publishOptions, ReturnListener returnListener) {
+	private RMQSink(
+			RMQConnectionConfig rmqConnectionConfig,
+			@Nullable String queueName,
+			SerializationSchema<IN> schema,
+			@Nullable RMQSinkPublishOptions<IN> publishOptions,
+			@Nullable SerializableReturnListener returnListener) {
 		this.rmqConnectionConfig = rmqConnectionConfig;
 		this.queueName = queueName;
 		this.schema = schema;
@@ -95,11 +105,11 @@ public class RMQSink<IN> extends RichSinkFunction<IN> {
 	 * @param rmqConnectionConfig The RabbitMQ connection configuration {@link RMQConnectionConfig}.
 	 * @param schema A {@link SerializationSchema} for turning the Java objects received into bytes
 	 * @param publishOptions A {@link RMQSinkPublishOptions} for providing message's routing key and/or properties
-	 * @param returnListener A ReturnListener implementation object to handle returned message event
+	 * @param returnListener A SerializableReturnListener implementation object to handle returned message event
      */
 	@PublicEvolving
 	public RMQSink(RMQConnectionConfig rmqConnectionConfig, SerializationSchema<IN> schema,
-			RMQSinkPublishOptions<IN> publishOptions, ReturnListener returnListener) {
+			RMQSinkPublishOptions<IN> publishOptions, SerializableReturnListener returnListener) {
 		this(rmqConnectionConfig, null, schema, publishOptions, returnListener);
 	}
 
