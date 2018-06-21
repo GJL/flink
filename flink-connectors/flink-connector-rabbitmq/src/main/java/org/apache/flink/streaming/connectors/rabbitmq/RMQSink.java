@@ -22,6 +22,7 @@ import org.apache.flink.api.common.serialization.SerializationSchema;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.streaming.api.functions.sink.RichSinkFunction;
 import org.apache.flink.streaming.connectors.rabbitmq.common.RMQConnectionConfig;
+import org.apache.flink.util.Preconditions;
 
 import com.rabbitmq.client.Channel;
 import com.rabbitmq.client.Connection;
@@ -171,23 +172,15 @@ public class RMQSink<IN> extends RichSinkFunction<IN> {
 				boolean mandatory = publishOptions.computeMandatory(value);
 				boolean immediate = publishOptions.computeImmediate(value);
 
-				if (returnListener == null && (mandatory || immediate)) {
-					throw new IllegalStateException("Setting mandatory and/or immediate flags to true requires a ReturnListener.");
-				} else {
-					String rk = publishOptions.computeRoutingKey(value);
-					if (rk == null) {
-						throw new NullPointerException("computeRoutingKey returned an anormal 'null' value.");
-					}
-					String exchange = publishOptions.computeExchange(value);
-					if (exchange == null) {
-						throw new NullPointerException("computeExchange returned an anormal 'null' value.");
-					}
+				Preconditions.checkState(!(returnListener == null && (mandatory || immediate)),
+					"Setting mandatory and/or immediate flags to true requires a ReturnListener.");
 
-					channel.basicPublish(exchange, rk, mandatory, immediate,
-									publishOptions.computeProperties(value), msg);
-				}
+				String rk = publishOptions.computeRoutingKey(value);
+				String exchange = publishOptions.computeExchange(value);
+
+				channel.basicPublish(exchange, rk, mandatory, immediate,
+					publishOptions.computeProperties(value), msg);
 			}
-
 		} catch (IOException e) {
 			if (logFailuresOnly) {
 				LOG.error("Cannot send RMQ message {} at {}", queueName, rmqConnectionConfig.getHost(), e);
