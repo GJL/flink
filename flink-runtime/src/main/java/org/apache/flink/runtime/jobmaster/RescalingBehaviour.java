@@ -22,6 +22,8 @@ import org.apache.flink.runtime.jobgraph.JobVertex;
 import org.apache.flink.util.FlinkException;
 import org.apache.flink.util.function.BiConsumerWithException;
 
+import java.util.Locale;
+
 /**
  * Definition of the rescaling behaviour.
  */
@@ -34,7 +36,7 @@ public enum RescalingBehaviour implements BiConsumerWithException<JobVertex, Int
 				throw new FlinkException("Cannot rescale vertex " + jobVertex.getName() +
 					" because its maximum parallelism " + jobVertex.getMaxParallelism() +
 					" is smaller than the new parallelism " + newParallelism + '.');
-			} else {
+			} else if (!jobVertex.getName().toLowerCase(Locale.ROOT).contains("non-parallel")) {
 				jobVertex.setParallelism(newParallelism);
 			}
 		}
