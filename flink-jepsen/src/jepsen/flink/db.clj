@@ -46,19 +46,21 @@
 
 (defn flink-configuration
   [test node]
-  {:high-availability                  "zookeeper"
-   :high-availability.zookeeper.quorum (zookeeper-quorum test)
-   :high-availability.storageDir       (str (:ha-storage-dir test) "/ha")
-   :jobmanager.rpc.address             node
-   :state.savepoints.dir               (str (:ha-storage-dir test) "/savepoints")
-   :rest.address                       node
-   :rest.port                          8081
-   :rest.bind-address                  "0.0.0.0"
-   :taskmanager.numberOfTaskSlots      taskmanager-slots
-   :yarn.application-attempts          99999
-   :slotmanager.taskmanager-timeout    10000
-   :state.backend.local-recovery       "false"
-   :taskmanager.registration.timeout   "30 s"})
+  (merge
+    {:high-availability                  "zookeeper"
+     :high-availability.zookeeper.quorum (zookeeper-quorum test)
+     :high-availability.storageDir       (str (:ha-storage-dir test) "/ha")
+     :jobmanager.rpc.address             node
+     :state.savepoints.dir               (str (:ha-storage-dir test) "/savepoints")
+     :rest.address                       node
+     :rest.port                          8081
+     :rest.bind-address                  "0.0.0.0"
+     :taskmanager.numberOfTaskSlots      taskmanager-slots
+     :yarn.application-attempts          99999
+     :slotmanager.taskmanager-timeout    10000
+     :state.backend.local-recovery       "true"
+     :taskmanager.registration.timeout   "30 s"}
+    (:flink-config test)))
 
 (defn write-configuration!
   "Writes the flink-conf.yaml to the flink conf directory"

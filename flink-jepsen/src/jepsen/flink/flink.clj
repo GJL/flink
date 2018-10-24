@@ -94,6 +94,22 @@
        (clojure.string/join ", ")
        (str "Must be one of: ")))
 
+(defn- parse-flink-config
+  "Parses a config string with the format key1=value1;key2=value2 into a map."
+  [config-string]
+  (if (clojure.string/blank? config-string)
+    {}
+    (->>
+      (clojure.string/split config-string #";")
+      (map #(clojure.string/split % #"="))
+      (map (fn [vec] [(keyword (first vec)) (second vec)]))
+      (into {}))))
+
+(defn- flink-config-valid?
+  [config-string]
+  ;; TODO implement me
+  true)
+
 (defn -main
   [& args]
   (cli/run!
@@ -129,6 +145,10 @@
                     [nil "--job-recovery-grace-period SECONDS" "Time period in which the job must become healthy."
                      :default 180
                      :parse-fn #(Long/parseLong %)
-                     :validate [pos? "Must be positive" (fn [v] (<= 60 v)) "Should be greater than 60"]]]})
+                     :validate [pos? "Must be positive" (fn [v] (<= 60 v)) "Should be greater than 60"]]
+                    [nil "--flink-config CONFIG-STRING" "Additional flink configuration in the format of key1=value1;key2=value2."
+                     :default ""
+                     :parse-fn parse-flink-config
+                     :validate [flink-config-valid? "Flink config must follow the format key1=value1;key2=value2"]]]})
       (cli/serve-cmd))
     args))
