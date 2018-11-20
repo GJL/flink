@@ -19,12 +19,13 @@
             [clojure.tools.logging :refer :all]
             [jepsen
              [control :as c]
-             [db :as db]]
+             [db :as db]
+             [util :refer [meh]]]
             [jepsen.control.util :as cu]))
 
 (def install-dir "/opt/hadoop")
 (def hadoop-conf-dir (str install-dir "/etc/hadoop"))
-(def yarn-log-dir "/tmp/logs/yarn")
+(def yarn-log-dir (str install-dir "/yarn-logs"))
 
 (defn name-node
   [nodes]
@@ -51,7 +52,12 @@
 
 (defn core-site-config
   [test]
-  {:fs.defaultFS (str "hdfs://" (name-node (:nodes test)) ":9000")})
+  {:hadoop.tmp.dir (str install-dir "/tmp")
+   :fs.defaultFS   (str "hdfs://" (name-node (:nodes test)) ":9000")})
+
+(defn hdfs-site-config
+  [_]
+  {:dfs.replication "1"})
 
 (defn property-value
   [property value]
@@ -106,9 +112,15 @@
 
 (defn find-files!
   [dir]
-  (->>
-    (clojure.string/split (c/exec :find dir :-type :f) #"\n")
-    (remove clojure.string/blank?)))
+  (let [files (try
+                (c/exec :find dir :-type :f)
+                (catch Exception e
+                  (if (.contains (.getMessage e) "No such file or directory")
+                    ""
+                    (throw e))))]
+    (->>
+      (clojure.string/split files #"\n")
+      (remove clojure.string/blank?))))
 
 (defn db
   [url]
@@ -119,7 +131,10 @@
         (cu/install-archive! url install-dir)
         (write-config! (str install-dir "/etc/hadoop/yarn-site.xml") (yarn-site-config test))
         (write-config! (str install-dir "/etc/hadoop/core-site.xml") (core-site-config test))
+        (write-config! (str install-dir "/etc/hadoop/hdfs-site.xml") (hdfs-site-config test))
         (c/exec :echo (c/lit "export JAVA_HOME=/usr/lib/jvm/java-8-openjdk-amd64") :>> (str install-dir "/etc/hadoop/hadoop-env.sh"))
+        (c/exec :echo (c/lit "\"export HADOOP_NAMENODE_OPTS=\\\"-Xms4G -Xmx4G \\$HADOOP_NAMENODE_OPTS\\\"\"") :>> (str install-dir "/etc/hadoop/hadoop-env.sh"))
+        (c/exec :echo (c/lit "\"export HADOOP_DATANODE_OPTS=\\\"-Xms2G -Xmx2G \\$HADOOP_DATANODE_OPTS\"\\\"") :>> (str install-dir "/etc/hadoop/hadoop-env.sh"))
         (start-name-node-formatted! test node)
         (start-data-node! test node)
         (start-resource-manager! test node)
@@ -128,8 +143,8 @@
     (teardown! [_ test node]
       (info "Teardown Hadoop")
       (c/su
-        (cu/grepkill! "hadoop")
-        (c/exec (c/lit (str "rm -rf /tmp/hadoop-* ||:")))))
+        (meh (cu/grepkill! "hadoop"))
+        (c/exec (c/lit (str "rm -rf " install-dir)))))
 
     db/LogFiles
     (log-files [_ _ _]
