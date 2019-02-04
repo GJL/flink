@@ -162,6 +162,9 @@ public class TaskExecutorTest extends TestLogger {
 	@Rule
 	public final TemporaryFolder tmp = new TemporaryFolder();
 
+	@Rule
+	public final TestName testName = new TestName();
+
 	private static final Time timeout = Time.milliseconds(10000L);
 
 	private TestingRpcService rpc;
@@ -230,9 +233,6 @@ public class TaskExecutorTest extends TestLogger {
 
 		testingFatalErrorHandler.rethrowError();
 	}
-
-	@Rule
-	public TestName name = new TestName();
 
 	@Test
 	public void testShouldShutDownTaskManagerServicesInPostStop() throws Exception {
@@ -741,7 +741,7 @@ public class TaskExecutorTest extends TestLogger {
 
 		JobInformation jobInformation = new JobInformation(
 				jobId,
-				name.getMethodName(),
+				testName.getMethodName(),
 				new SerializedValue<>(new ExecutionConfig()),
 				new Configuration(),
 				Collections.emptyList(),
@@ -1145,7 +1145,7 @@ public class TaskExecutorTest extends TestLogger {
 
 			JobInformation jobInformation = new JobInformation(
 				jobId,
-				name.getMethodName(),
+				testName.getMethodName(),
 				new SerializedValue<>(new ExecutionConfig()),
 				new Configuration(),
 				Collections.emptyList(),
