@@ -22,6 +22,7 @@ package org.apache.flink.runtime.jobmaster;
 import org.apache.flink.api.common.JobID;
 import org.apache.flink.core.io.InputSplit;
 import org.apache.flink.queryablestate.KvStateID;
+import org.apache.flink.runtime.accumulators.AccumulatorSnapshot;
 import org.apache.flink.runtime.execution.ExecutionState;
 import org.apache.flink.runtime.executiongraph.Execution;
 import org.apache.flink.runtime.executiongraph.ExecutionAttemptID;
@@ -225,5 +226,10 @@ public class LegacyScheduler implements SchedulerNG {
 			}
 			throw new FlinkJobNotFoundException(jobId);
 		}
+	}
+
+	@Override
+	public void updateAccumulators(final AccumulatorSnapshot accumulatorSnapshot) {
+		executionGraph.updateAccumulators(accumulatorSnapshot);
 	}
 }

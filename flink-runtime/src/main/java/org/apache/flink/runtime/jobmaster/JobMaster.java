@@ -1315,7 +1315,7 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId> implements JobMast
 		@Override
 		public void reportPayload(ResourceID resourceID, AccumulatorReport payload) {
 			for (AccumulatorSnapshot snapshot : payload.getAccumulatorSnapshots()) {
-				executionGraph.updateAccumulators(snapshot);
+				schedulerNG.updateAccumulators(snapshot);
 			}
 		}
 
