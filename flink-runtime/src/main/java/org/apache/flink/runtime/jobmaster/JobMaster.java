@@ -414,12 +414,9 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId> implements JobMast
 	public CompletableFuture<Acknowledge> scheduleOrUpdateConsumers(
 			final ResultPartitionID partitionID,
 			final Time timeout) {
-		try {
-			executionGraph.scheduleOrUpdateConsumers(partitionID);
-			return CompletableFuture.completedFuture(Acknowledge.get());
-		} catch (Exception e) {
-			return FutureUtils.completedExceptionally(e);
-		}
+
+		schedulerNG.scheduleOrUpdateConsumers(partitionID);
+		return CompletableFuture.completedFuture(Acknowledge.get());
 	}
 
 	@Override

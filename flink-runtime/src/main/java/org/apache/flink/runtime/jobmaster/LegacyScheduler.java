@@ -24,6 +24,7 @@ import org.apache.flink.runtime.execution.ExecutionState;
 import org.apache.flink.runtime.executiongraph.Execution;
 import org.apache.flink.runtime.executiongraph.ExecutionAttemptID;
 import org.apache.flink.runtime.executiongraph.ExecutionGraph;
+import org.apache.flink.runtime.executiongraph.ExecutionGraphException;
 import org.apache.flink.runtime.executiongraph.ExecutionJobVertex;
 import org.apache.flink.runtime.executiongraph.IntermediateResult;
 import org.apache.flink.runtime.io.network.partition.ResultPartitionID;
@@ -133,6 +134,15 @@ public class LegacyScheduler implements SchedulerNG {
 				throw new IllegalArgumentException("Intermediate data set with ID "
 					+ intermediateResultId + " not found.");
 			}
+		}
+	}
+
+	@Override
+	public void scheduleOrUpdateConsumers(final ResultPartitionID partitionID) {
+		try {
+			executionGraph.scheduleOrUpdateConsumers(partitionID);
+		} catch (ExecutionGraphException e) {
+			throw new RuntimeException(e);
 		}
 	}
 }

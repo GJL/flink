@@ -39,4 +39,6 @@ public interface SchedulerNG {
 
 	ExecutionState requestPartitionState(IntermediateDataSetID intermediateResultId, ResultPartitionID resultPartitionId) throws PartitionProducerDisposedException;
 
+	void scheduleOrUpdateConsumers(ResultPartitionID partitionID);
+
 }
