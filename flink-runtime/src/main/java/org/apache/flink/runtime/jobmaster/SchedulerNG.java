@@ -19,8 +19,12 @@
 
 package org.apache.flink.runtime.jobmaster;
 
+import org.apache.flink.runtime.execution.ExecutionState;
 import org.apache.flink.runtime.executiongraph.ExecutionAttemptID;
+import org.apache.flink.runtime.io.network.partition.ResultPartitionID;
+import org.apache.flink.runtime.jobgraph.IntermediateDataSetID;
 import org.apache.flink.runtime.jobgraph.JobVertexID;
+import org.apache.flink.runtime.jobmanager.PartitionProducerDisposedException;
 import org.apache.flink.runtime.taskmanager.TaskExecutionState;
 
 import java.io.IOException;
@@ -32,5 +36,7 @@ public interface SchedulerNG {
 	boolean updateTaskExecutionState(TaskExecutionState taskExecutionState);
 
 	SerializedInputSplit requestNextInputSplit(JobVertexID vertexID, ExecutionAttemptID executionAttempt) throws IOException;
+
+	ExecutionState requestPartitionState(IntermediateDataSetID intermediateResultId, ResultPartitionID resultPartitionId) throws PartitionProducerDisposedException;
 
 }

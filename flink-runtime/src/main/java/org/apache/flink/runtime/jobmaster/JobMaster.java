@@ -39,12 +39,10 @@ import org.apache.flink.runtime.clusterframework.types.ResourceID;
 import org.apache.flink.runtime.concurrent.FutureUtils;
 import org.apache.flink.runtime.execution.ExecutionState;
 import org.apache.flink.runtime.executiongraph.ArchivedExecutionGraph;
-import org.apache.flink.runtime.executiongraph.Execution;
 import org.apache.flink.runtime.executiongraph.ExecutionAttemptID;
 import org.apache.flink.runtime.executiongraph.ExecutionGraph;
 import org.apache.flink.runtime.executiongraph.ExecutionGraphBuilder;
 import org.apache.flink.runtime.executiongraph.ExecutionJobVertex;
-import org.apache.flink.runtime.executiongraph.IntermediateResult;
 import org.apache.flink.runtime.executiongraph.JobStatusListener;
 import org.apache.flink.runtime.executiongraph.restart.RestartStrategy;
 import org.apache.flink.runtime.executiongraph.restart.RestartStrategyResolving;
@@ -405,30 +403,10 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId> implements JobMast
 			final IntermediateDataSetID intermediateResultId,
 			final ResultPartitionID resultPartitionId) {
 
-		final Execution execution = executionGraph.getRegisteredExecutions().get(resultPartitionId.getProducerId());
-		if (execution != null) {
-			return CompletableFuture.completedFuture(execution.getState());
-		}
-		else {
-			final IntermediateResult intermediateResult =
-					executionGraph.getAllIntermediateResults().get(intermediateResultId);
-
-			if (intermediateResult != null) {
-				// Try to find the producing execution
-				Execution producerExecution = intermediateResult
-						.getPartitionById(resultPartitionId.getPartitionId())
-						.getProducer()
-						.getCurrentExecutionAttempt();
-
-				if (producerExecution.getAttemptId().equals(resultPartitionId.getProducerId())) {
-					return CompletableFuture.completedFuture(producerExecution.getState());
-				} else {
-					return FutureUtils.completedExceptionally(new PartitionProducerDisposedException(resultPartitionId));
-				}
-			} else {
-				return FutureUtils.completedExceptionally(new IllegalArgumentException("Intermediate data set with ID "
-						+ intermediateResultId + " not found."));
-			}
+		try {
+			return CompletableFuture.completedFuture(schedulerNG.requestPartitionState(intermediateResultId, resultPartitionId));
+		} catch (PartitionProducerDisposedException e) {
+			return FutureUtils.completedExceptionally(e);
 		}
 	}
 
