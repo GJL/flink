@@ -20,9 +20,13 @@
 package org.apache.flink.runtime.jobmaster;
 
 import org.apache.flink.api.common.JobID;
+import org.apache.flink.configuration.CheckpointingOptions;
 import org.apache.flink.core.io.InputSplit;
 import org.apache.flink.queryablestate.KvStateID;
 import org.apache.flink.runtime.accumulators.AccumulatorSnapshot;
+import org.apache.flink.runtime.checkpoint.CheckpointCoordinator;
+import org.apache.flink.runtime.checkpoint.CompletedCheckpoint;
+import org.apache.flink.runtime.concurrent.ComponentMainThreadExecutor;
 import org.apache.flink.runtime.execution.ExecutionState;
 import org.apache.flink.runtime.executiongraph.ArchivedExecutionGraph;
 import org.apache.flink.runtime.executiongraph.Execution;
@@ -55,6 +59,8 @@ import org.slf4j.Logger;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 
 import static org.apache.flink.util.Preconditions.checkNotNull;
 
@@ -67,6 +73,8 @@ public class LegacyScheduler implements SchedulerNG {
 	private final Logger log;
 
 	private final BackPressureStatsTracker backPressureStatsTracker;
+
+	private ComponentMainThreadExecutor mainThreadExecutor;
 
 	public LegacyScheduler(final JobGraph jobGraph, final ExecutionGraph executionGraph, final Logger log, final BackPressureStatsTracker backPressureStatsTracker) {
 		this.jobGraph = checkNotNull(jobGraph);
@@ -268,5 +276,56 @@ public class LegacyScheduler implements SchedulerNG {
 	@Override
 	public JobDetails requestJobDetails() {
 		return WebMonitorUtils.createDetailsForJob(executionGraph);
+	}
+
+	@Override
+	public CompletableFuture<String> triggerSavepoint(final String targetDirectory, final boolean cancelJob) {
+		final CheckpointCoordinator checkpointCoordinator = executionGraph.getCheckpointCoordinator();
+		if (checkpointCoordinator == null) {
+			throw new IllegalStateException(
+				String.format("Job %s is not a streaming job.", jobGraph.getJobID()));
+		} else if (targetDirectory == null && !checkpointCoordinator.getCheckpointStorage().hasDefaultSavepointLocation()) {
+			log.info("Trying to cancel job {} with savepoint, but no savepoint directory configured.", jobGraph.getJobID());
+
+			throw new IllegalStateException(
+				"No savepoint directory configured. You can either specify a directory " +
+					"while cancelling via -s :targetDirectory or configure a cluster-wide " +
+					"default via key '" + CheckpointingOptions.SAVEPOINT_DIRECTORY.key() + "'.");
+		}
+
+		if (cancelJob) {
+			checkpointCoordinator.stopCheckpointScheduler();
+		}
+
+		return checkpointCoordinator
+			.triggerSavepoint(System.currentTimeMillis(), targetDirectory)
+			.thenApply(CompletedCheckpoint::getExternalPointer)
+			.handleAsync((path, throwable) -> {
+				if (throwable != null) {
+					if (cancelJob) {
+						startCheckpointScheduler(checkpointCoordinator);
+					}
+					throw new CompletionException(throwable);
+				} else if (cancelJob) {
+					log.info("Savepoint stored in {}. Now cancelling {}.", path, jobGraph.getJobID());
+					cancel();
+				}
+				return path;
+			}, mainThreadExecutor);
+	}
+
+	private void startCheckpointScheduler(final CheckpointCoordinator checkpointCoordinator) {
+		if (checkpointCoordinator.isPeriodicCheckpointingConfigured()) {
+			try {
+				checkpointCoordinator.startCheckpointScheduler();
+			} catch (IllegalStateException ignored) {
+				// Concurrent shut down of the coordinator
+			}
+		}
+	}
+
+	@Override
+	public void setMainThreadExecutor(final ComponentMainThreadExecutor mainThreadExecutor) {
+		this.mainThreadExecutor = checkNotNull(mainThreadExecutor);
 	}
 }

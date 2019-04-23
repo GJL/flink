@@ -22,6 +22,7 @@ package org.apache.flink.runtime.jobmaster;
 import org.apache.flink.api.common.JobID;
 import org.apache.flink.queryablestate.KvStateID;
 import org.apache.flink.runtime.accumulators.AccumulatorSnapshot;
+import org.apache.flink.runtime.concurrent.ComponentMainThreadExecutor;
 import org.apache.flink.runtime.execution.ExecutionState;
 import org.apache.flink.runtime.executiongraph.ArchivedExecutionGraph;
 import org.apache.flink.runtime.executiongraph.ExecutionAttemptID;
@@ -39,9 +40,12 @@ import org.apache.flink.runtime.state.KeyGroupRange;
 import org.apache.flink.runtime.taskmanager.TaskExecutionState;
 import org.apache.flink.util.FlinkException;
 
+import javax.annotation.Nullable;
+
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
 
 public interface SchedulerNG {
 
@@ -70,5 +74,9 @@ public interface SchedulerNG {
 	JobStatus requestJobStatus();
 
 	JobDetails requestJobDetails();
+
+	CompletableFuture<String> triggerSavepoint(@Nullable String targetDirectory, boolean cancelJob);
+
+	void setMainThreadExecutor(ComponentMainThreadExecutor mainThreadExecutor);
 
 }

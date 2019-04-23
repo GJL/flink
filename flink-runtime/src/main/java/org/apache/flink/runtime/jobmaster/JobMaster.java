@@ -31,7 +31,6 @@ import org.apache.flink.runtime.accumulators.AccumulatorSnapshot;
 import org.apache.flink.runtime.blob.BlobWriter;
 import org.apache.flink.runtime.checkpoint.CheckpointCoordinator;
 import org.apache.flink.runtime.checkpoint.CheckpointMetrics;
-import org.apache.flink.runtime.checkpoint.CompletedCheckpoint;
 import org.apache.flink.runtime.checkpoint.TaskStateSnapshot;
 import org.apache.flink.runtime.client.JobExecutionException;
 import org.apache.flink.runtime.clusterframework.types.AllocationID;
@@ -665,37 +664,7 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId> implements JobMast
 			final boolean cancelJob,
 			final Time timeout) {
 
-		final CheckpointCoordinator checkpointCoordinator = executionGraph.getCheckpointCoordinator();
-		if (checkpointCoordinator == null) {
-			return FutureUtils.completedExceptionally(new IllegalStateException(
-				String.format("Job %s is not a streaming job.", jobGraph.getJobID())));
-		} else if (targetDirectory == null && !checkpointCoordinator.getCheckpointStorage().hasDefaultSavepointLocation()) {
-			log.info("Trying to cancel job {} with savepoint, but no savepoint directory configured.", jobGraph.getJobID());
-
-			return FutureUtils.completedExceptionally(new IllegalStateException(
-				"No savepoint directory configured. You can either specify a directory " +
-					"while cancelling via -s :targetDirectory or configure a cluster-wide " +
-					"default via key '" + CheckpointingOptions.SAVEPOINT_DIRECTORY.key() + "'."));
-		}
-
-		if (cancelJob) {
-			checkpointCoordinator.stopCheckpointScheduler();
-		}
-		return checkpointCoordinator
-			.triggerSavepoint(System.currentTimeMillis(), targetDirectory)
-			.thenApply(CompletedCheckpoint::getExternalPointer)
-			.handleAsync((path, throwable) -> {
-				if (throwable != null) {
-					if (cancelJob) {
-						startCheckpointScheduler(checkpointCoordinator);
-					}
-					throw new CompletionException(throwable);
-				} else if (cancelJob) {
-					log.info("Savepoint stored in {}. Now cancelling {}.", path, jobGraph.getJobID());
-					cancel(timeout);
-				}
-				return path;
-			}, getMainThreadExecutor());
+		return schedulerNG.triggerSavepoint(targetDirectory, cancelJob);
 	}
 
 	@Override
@@ -754,16 +723,6 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId> implements JobMast
 
 		return savepointFuture.thenCompose((path) ->
 			terminationFuture.thenApply((jobStatus -> path)));
-	}
-
-	private void startCheckpointScheduler(final CheckpointCoordinator checkpointCoordinator) {
-		if (checkpointCoordinator.isPeriodicCheckpointingConfigured()) {
-			try {
-				checkpointCoordinator.startCheckpointScheduler();
-			} catch (IllegalStateException ignored) {
-				// Concurrent shut down of the coordinator
-			}
-		}
 	}
 
 	@Override
@@ -931,6 +890,7 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId> implements JobMast
 		}
 
 		this.schedulerNG = new LegacyScheduler(jobGraph, executionGraph, log, backPressureStatsTracker);
+		this.schedulerNG.setMainThreadExecutor(getMainThreadExecutor());
 
 		executionGraphAssignedFuture.thenRun(this::scheduleExecutionGraph);
 	}
