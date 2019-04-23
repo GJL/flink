@@ -21,6 +21,7 @@ package org.apache.flink.runtime.jobmaster;
 
 import org.apache.flink.api.common.JobID;
 import org.apache.flink.core.io.InputSplit;
+import org.apache.flink.queryablestate.KvStateID;
 import org.apache.flink.runtime.execution.ExecutionState;
 import org.apache.flink.runtime.executiongraph.Execution;
 import org.apache.flink.runtime.executiongraph.ExecutionAttemptID;
@@ -37,12 +38,14 @@ import org.apache.flink.runtime.messages.FlinkJobNotFoundException;
 import org.apache.flink.runtime.query.KvStateLocation;
 import org.apache.flink.runtime.query.KvStateLocationRegistry;
 import org.apache.flink.runtime.query.UnknownKvStateLocation;
+import org.apache.flink.runtime.state.KeyGroupRange;
 import org.apache.flink.runtime.taskmanager.TaskExecutionState;
 import org.apache.flink.util.InstantiationUtil;
 
 import org.slf4j.Logger;
 
 import java.io.IOException;
+import java.net.InetSocketAddress;
 
 import static org.apache.flink.util.Preconditions.checkNotNull;
 
@@ -173,6 +176,52 @@ public class LegacyScheduler implements SchedulerNG {
 		} else {
 			if (log.isDebugEnabled()) {
 				log.debug("Request of key-value state location for unknown job {} received.", jobId);
+			}
+			throw new FlinkJobNotFoundException(jobId);
+		}
+	}
+
+	@Override
+	public void notifyKvStateRegistered(final JobID jobId, final JobVertexID jobVertexId, final KeyGroupRange keyGroupRange, final String registrationName, final KvStateID kvStateId, final InetSocketAddress kvStateServerAddress) throws FlinkJobNotFoundException {
+		if (jobGraph.getJobID().equals(jobId)) {
+			if (log.isDebugEnabled()) {
+				log.debug("Key value state registered for job {} under name {}.",
+					jobGraph.getJobID(), registrationName);
+			}
+
+			try {
+				executionGraph.getKvStateLocationRegistry().notifyKvStateRegistered(
+					jobVertexId, keyGroupRange, registrationName, kvStateId, kvStateServerAddress);
+			} catch (Exception e) {
+				log.error("Failed to notify KvStateRegistry about registration {}.", registrationName, e);
+				throw new RuntimeException(e);
+			}
+		} else {
+			if (log.isDebugEnabled()) {
+				log.debug("Notification about key-value state registration for unknown job {} received.", jobId);
+			}
+			throw new FlinkJobNotFoundException(jobId);
+		}
+	}
+
+	@Override
+	public void notifyKvStateUnregistered(final JobID jobId, final JobVertexID jobVertexId, final KeyGroupRange keyGroupRange, final String registrationName) throws FlinkJobNotFoundException {
+		if (jobGraph.getJobID().equals(jobId)) {
+			if (log.isDebugEnabled()) {
+				log.debug("Key value state unregistered for job {} under name {}.",
+					jobGraph.getJobID(), registrationName);
+			}
+
+			try {
+				executionGraph.getKvStateLocationRegistry().notifyKvStateUnregistered(
+					jobVertexId, keyGroupRange, registrationName);
+			} catch (Exception e) {
+				log.error("Failed to notify KvStateRegistry about unregistration {}.", registrationName, e);
+				throw new RuntimeException(e);
+			}
+		} else {
+			if (log.isDebugEnabled()) {
+				log.debug("Notification about key-value state deregistration for unknown job {} received.", jobId);
 			}
 			throw new FlinkJobNotFoundException(jobId);
 		}
