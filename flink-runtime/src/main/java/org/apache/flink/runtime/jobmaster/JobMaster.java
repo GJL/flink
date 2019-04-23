@@ -860,12 +860,7 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId> implements JobMast
 		jobStatusListener = new JobManagerJobStatusListener();
 		executionGraph.registerJobStatusListener(jobStatusListener);
 
-		try {
-			executionGraph.scheduleForExecution();
-		}
-		catch (Throwable t) {
-			executionGraph.failGlobal(t);
-		}
+		schedulerNG.startScheduling();
 	}
 
 	private ExecutionGraph createAndRestoreExecutionGraph(JobManagerJobMetricGroup currentJobManagerJobMetricGroup) throws Exception {

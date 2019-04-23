@@ -52,6 +52,8 @@ import java.util.concurrent.CompletableFuture;
 
 public interface SchedulerNG {
 
+	void startScheduling();
+
 	void cancel();
 
 	boolean updateTaskExecutionState(TaskExecutionState taskExecutionState);

@@ -92,6 +92,16 @@ public class LegacyScheduler implements SchedulerNG {
 	}
 
 	@Override
+	public void startScheduling() {
+		try {
+			executionGraph.scheduleForExecution();
+		}
+		catch (Throwable t) {
+			executionGraph.failGlobal(t);
+		}
+	}
+
+	@Override
 	public void cancel() {
 		executionGraph.cancel();
 	}
