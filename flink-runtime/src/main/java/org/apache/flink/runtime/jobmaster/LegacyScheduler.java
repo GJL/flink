@@ -19,6 +19,7 @@
 
 package org.apache.flink.runtime.jobmaster;
 
+import org.apache.flink.api.common.JobID;
 import org.apache.flink.core.io.InputSplit;
 import org.apache.flink.runtime.execution.ExecutionState;
 import org.apache.flink.runtime.executiongraph.Execution;
@@ -29,8 +30,13 @@ import org.apache.flink.runtime.executiongraph.ExecutionJobVertex;
 import org.apache.flink.runtime.executiongraph.IntermediateResult;
 import org.apache.flink.runtime.io.network.partition.ResultPartitionID;
 import org.apache.flink.runtime.jobgraph.IntermediateDataSetID;
+import org.apache.flink.runtime.jobgraph.JobGraph;
 import org.apache.flink.runtime.jobgraph.JobVertexID;
 import org.apache.flink.runtime.jobmanager.PartitionProducerDisposedException;
+import org.apache.flink.runtime.messages.FlinkJobNotFoundException;
+import org.apache.flink.runtime.query.KvStateLocation;
+import org.apache.flink.runtime.query.KvStateLocationRegistry;
+import org.apache.flink.runtime.query.UnknownKvStateLocation;
 import org.apache.flink.runtime.taskmanager.TaskExecutionState;
 import org.apache.flink.util.InstantiationUtil;
 
@@ -42,12 +48,14 @@ import static org.apache.flink.util.Preconditions.checkNotNull;
 
 public class LegacyScheduler implements SchedulerNG {
 
+	private final JobGraph jobGraph;
 
 	private final ExecutionGraph executionGraph;
 
 	private final Logger log;
 
-	public LegacyScheduler(final ExecutionGraph executionGraph, final Logger log) {
+	public LegacyScheduler(final JobGraph jobGraph, final ExecutionGraph executionGraph, final Logger log) {
+		this.jobGraph = checkNotNull(jobGraph);
 		this.executionGraph = checkNotNull(executionGraph);
 		this.log = checkNotNull(log);
 	}
@@ -143,6 +151,30 @@ public class LegacyScheduler implements SchedulerNG {
 			executionGraph.scheduleOrUpdateConsumers(partitionID);
 		} catch (ExecutionGraphException e) {
 			throw new RuntimeException(e);
+		}
+	}
+
+	@Override
+	public KvStateLocation requestKvStateLocation(final JobID jobId, final String registrationName) throws UnknownKvStateLocation, FlinkJobNotFoundException {
+		// sanity check for the correct JobID
+		if (jobGraph.getJobID().equals(jobId)) {
+			if (log.isDebugEnabled()) {
+				log.debug("Lookup key-value state for job {} with registration " +
+					"name {}.", jobGraph.getJobID(), registrationName);
+			}
+
+			final KvStateLocationRegistry registry = executionGraph.getKvStateLocationRegistry();
+			final KvStateLocation location = registry.getKvStateLocation(registrationName);
+			if (location != null) {
+				return location;
+			} else {
+				throw new UnknownKvStateLocation(registrationName);
+			}
+		} else {
+			if (log.isDebugEnabled()) {
+				log.debug("Request of key-value state location for unknown job {} received.", jobId);
+			}
+			throw new FlinkJobNotFoundException(jobId);
 		}
 	}
 }

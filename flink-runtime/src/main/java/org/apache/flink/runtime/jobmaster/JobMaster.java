@@ -73,7 +73,6 @@ import org.apache.flink.runtime.messages.checkpoint.DeclineCheckpoint;
 import org.apache.flink.runtime.messages.webmonitor.JobDetails;
 import org.apache.flink.runtime.metrics.groups.JobManagerJobMetricGroup;
 import org.apache.flink.runtime.query.KvStateLocation;
-import org.apache.flink.runtime.query.KvStateLocationRegistry;
 import org.apache.flink.runtime.query.UnknownKvStateLocation;
 import org.apache.flink.runtime.registration.RegisteredRpcConnection;
 import org.apache.flink.runtime.registration.RegistrationResponse;
@@ -495,25 +494,10 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId> implements JobMast
 
 	@Override
 	public CompletableFuture<KvStateLocation> requestKvStateLocation(final JobID jobId, final String registrationName) {
-		// sanity check for the correct JobID
-		if (jobGraph.getJobID().equals(jobId)) {
-			if (log.isDebugEnabled()) {
-				log.debug("Lookup key-value state for job {} with registration " +
-					"name {}.", jobGraph.getJobID(), registrationName);
-			}
-
-			final KvStateLocationRegistry registry = executionGraph.getKvStateLocationRegistry();
-			final KvStateLocation location = registry.getKvStateLocation(registrationName);
-			if (location != null) {
-				return CompletableFuture.completedFuture(location);
-			} else {
-				return FutureUtils.completedExceptionally(new UnknownKvStateLocation(registrationName));
-			}
-		} else {
-			if (log.isDebugEnabled()) {
-				log.debug("Request of key-value state location for unknown job {} received.", jobId);
-			}
-			return FutureUtils.completedExceptionally(new FlinkJobNotFoundException(jobId));
+		try {
+			return CompletableFuture.completedFuture(schedulerNG.requestKvStateLocation(jobId, registrationName));
+		} catch (UnknownKvStateLocation | FlinkJobNotFoundException e) {
+			return FutureUtils.completedExceptionally(e);
 		}
 	}
 
@@ -981,7 +965,7 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId> implements JobMast
 				});
 		}
 
-		this.schedulerNG = new LegacyScheduler(executionGraph, log);
+		this.schedulerNG = new LegacyScheduler(jobGraph, executionGraph, log);
 
 		executionGraphAssignedFuture.thenRun(this::scheduleExecutionGraph);
 	}
