@@ -25,7 +25,6 @@ import org.apache.flink.api.common.restartstrategy.RestartStrategies;
 import org.apache.flink.api.common.time.Time;
 import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.configuration.CheckpointingOptions;
-import org.apache.flink.core.io.InputSplit;
 import org.apache.flink.queryablestate.KvStateID;
 import org.apache.flink.runtime.JobException;
 import org.apache.flink.runtime.accumulators.AccumulatorSnapshot;
@@ -192,6 +191,8 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId> implements JobMast
 	// -------- Mutable fields ---------
 
 	private ExecutionGraph executionGraph;
+
+	private SchedulerNG schedulerNG;
 
 	@Nullable
 	private JobManagerJobStatusListener jobStatusListener;
@@ -362,7 +363,7 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId> implements JobMast
 
 	@Override
 	public CompletableFuture<Acknowledge> cancel(Time timeout) {
-		executionGraph.cancel();
+		schedulerNG.cancel();
 
 		return CompletableFuture.completedFuture(Acknowledge.get());
 	}
@@ -378,7 +379,7 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId> implements JobMast
 			final TaskExecutionState taskExecutionState) {
 		checkNotNull(taskExecutionState, "taskExecutionState");
 
-		if (executionGraph.updateState(taskExecutionState)) {
+		if (schedulerNG.updateTaskExecutionState(taskExecutionState)) {
 			return CompletableFuture.completedFuture(Acknowledge.get());
 		} else {
 			return FutureUtils.completedExceptionally(
@@ -392,43 +393,10 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId> implements JobMast
 			final JobVertexID vertexID,
 			final ExecutionAttemptID executionAttempt) {
 
-		final Execution execution = executionGraph.getRegisteredExecutions().get(executionAttempt);
-		if (execution == null) {
-			// can happen when JobManager had already unregistered this execution upon on task failure,
-			// but TaskManager get some delay to aware of that situation
-			if (log.isDebugEnabled()) {
-				log.debug("Can not find Execution for attempt {}.", executionAttempt);
-			}
-			// but we should TaskManager be aware of this
-			return FutureUtils.completedExceptionally(new Exception("Can not find Execution for attempt " + executionAttempt));
-		}
-
-		final ExecutionJobVertex vertex = executionGraph.getJobVertex(vertexID);
-		if (vertex == null) {
-			log.error("Cannot find execution vertex for vertex ID {}.", vertexID);
-			return FutureUtils.completedExceptionally(new Exception("Cannot find execution vertex for vertex ID " + vertexID));
-		}
-
-		if (vertex.getSplitAssigner() == null) {
-			log.error("No InputSplitAssigner for vertex ID {}.", vertexID);
-			return FutureUtils.completedExceptionally(new Exception("No InputSplitAssigner for vertex ID " + vertexID));
-		}
-
-		final InputSplit nextInputSplit = execution.getNextInputSplit();
-
-		if (log.isDebugEnabled()) {
-			log.debug("Send next input split {}.", nextInputSplit);
-		}
-
 		try {
-			final byte[] serializedInputSplit = InstantiationUtil.serializeObject(nextInputSplit);
-			return CompletableFuture.completedFuture(new SerializedInputSplit(serializedInputSplit));
-		} catch (Exception ex) {
-			log.error("Could not serialize the next input split of class {}.", nextInputSplit.getClass(), ex);
-			IOException reason = new IOException("Could not serialize the next input split of class " +
-					nextInputSplit.getClass() + ".", ex);
-			vertex.fail(reason);
-			return FutureUtils.completedExceptionally(reason);
+			return CompletableFuture.completedFuture(schedulerNG.requestNextInputSplit(vertexID, executionAttempt));
+		} catch (IOException e) {
+			return FutureUtils.completedExceptionally(e);
 		}
 	}
 
@@ -1038,6 +1006,8 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId> implements JobMast
 				});
 		}
 
+		this.schedulerNG = new LegacyScheduler(executionGraph, log);
+
 		executionGraphAssignedFuture.thenRun(this::scheduleExecutionGraph);
 	}
 
@@ -1456,3 +1426,4 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId> implements JobMast
 		return restartStrategy;
 	}
 }
+
