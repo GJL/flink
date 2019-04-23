@@ -24,6 +24,7 @@ import org.apache.flink.core.io.InputSplit;
 import org.apache.flink.queryablestate.KvStateID;
 import org.apache.flink.runtime.accumulators.AccumulatorSnapshot;
 import org.apache.flink.runtime.execution.ExecutionState;
+import org.apache.flink.runtime.executiongraph.ArchivedExecutionGraph;
 import org.apache.flink.runtime.executiongraph.Execution;
 import org.apache.flink.runtime.executiongraph.ExecutionAttemptID;
 import org.apache.flink.runtime.executiongraph.ExecutionGraph;
@@ -249,5 +250,10 @@ public class LegacyScheduler implements SchedulerNG {
 		}
 
 		return backPressureStatsTracker.getOperatorBackPressureStats(jobVertex);
+	}
+
+	@Override
+	public ArchivedExecutionGraph requestJob() {
+		return ArchivedExecutionGraph.createFrom(executionGraph);
 	}
 }
