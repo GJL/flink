@@ -103,6 +103,11 @@ public class LegacyScheduler implements SchedulerNG {
 	}
 
 	@Override
+	public void suspend(Throwable cause) {
+		executionGraph.suspend(cause);
+	}
+
+	@Override
 	public void cancel() {
 		executionGraph.cancel();
 	}

@@ -55,6 +55,8 @@ public interface SchedulerNG {
 
 	void startScheduling();
 
+	void suspend(Throwable cause);
+
 	void cancel();
 
 	boolean updateTaskExecutionState(TaskExecutionState taskExecutionState);

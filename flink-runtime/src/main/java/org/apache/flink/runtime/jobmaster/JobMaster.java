@@ -908,7 +908,7 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId> implements JobMast
 	}
 
 	private void suspendExecutionGraph(Exception cause) {
-		executionGraph.suspend(cause);
+		schedulerNG.suspend(cause);
 
 		if (jobManagerJobMetricGroup != null) {
 			jobManagerJobMetricGroup.close();
