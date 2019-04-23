@@ -34,6 +34,7 @@ import org.apache.flink.runtime.executiongraph.IntermediateResult;
 import org.apache.flink.runtime.io.network.partition.ResultPartitionID;
 import org.apache.flink.runtime.jobgraph.IntermediateDataSetID;
 import org.apache.flink.runtime.jobgraph.JobGraph;
+import org.apache.flink.runtime.jobgraph.JobStatus;
 import org.apache.flink.runtime.jobgraph.JobVertexID;
 import org.apache.flink.runtime.jobmanager.PartitionProducerDisposedException;
 import org.apache.flink.runtime.messages.FlinkJobNotFoundException;
@@ -255,5 +256,10 @@ public class LegacyScheduler implements SchedulerNG {
 	@Override
 	public ArchivedExecutionGraph requestJob() {
 		return ArchivedExecutionGraph.createFrom(executionGraph);
+	}
+
+	@Override
+	public JobStatus requestJobStatus() {
+		return executionGraph.getState();
 	}
 }

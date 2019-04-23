@@ -653,7 +653,7 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId> implements JobMast
 
 	@Override
 	public CompletableFuture<JobStatus> requestJobStatus(Time timeout) {
-		return CompletableFuture.completedFuture(executionGraph.getState());
+		return CompletableFuture.completedFuture(schedulerNG.requestJobStatus());
 	}
 
 	@Override
