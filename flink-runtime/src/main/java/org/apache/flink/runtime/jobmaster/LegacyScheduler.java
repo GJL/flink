@@ -37,6 +37,7 @@ import org.apache.flink.runtime.executiongraph.ExecutionGraph;
 import org.apache.flink.runtime.executiongraph.ExecutionGraphException;
 import org.apache.flink.runtime.executiongraph.ExecutionJobVertex;
 import org.apache.flink.runtime.executiongraph.IntermediateResult;
+import org.apache.flink.runtime.executiongraph.JobStatusListener;
 import org.apache.flink.runtime.io.network.partition.ResultPartitionID;
 import org.apache.flink.runtime.jobgraph.IntermediateDataSetID;
 import org.apache.flink.runtime.jobgraph.JobGraph;
@@ -397,5 +398,10 @@ public class LegacyScheduler implements SchedulerNG {
 				log.debug(errorMessage, jobGraph.getJobID());
 			}
 		}
+	}
+
+	@Override
+	public void registerJobStatusListener(final JobStatusListener jobStatusListener) {
+		executionGraph.registerJobStatusListener(jobStatusListener);
 	}
 }

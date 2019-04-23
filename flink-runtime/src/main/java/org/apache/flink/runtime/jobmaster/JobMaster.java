@@ -858,7 +858,7 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId> implements JobMast
 		checkState(jobStatusListener == null);
 		// register self as job status change listener
 		jobStatusListener = new JobManagerJobStatusListener();
-		executionGraph.registerJobStatusListener(jobStatusListener);
+		schedulerNG.registerJobStatusListener(jobStatusListener);
 
 		schedulerNG.startScheduling();
 	}
@@ -963,7 +963,7 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId> implements JobMast
 		validateRunsInMainThread();
 
 		if (newJobStatus.isGloballyTerminalState()) {
-			final ArchivedExecutionGraph archivedExecutionGraph = ArchivedExecutionGraph.createFrom(executionGraph);
+			final ArchivedExecutionGraph archivedExecutionGraph = schedulerNG.requestJob();
 			scheduledExecutorService.execute(() -> jobCompletionActions.jobReachedGloballyTerminalState(archivedExecutionGraph));
 		}
 	}
