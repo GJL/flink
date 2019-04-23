@@ -42,7 +42,6 @@ import org.apache.flink.runtime.executiongraph.ArchivedExecutionGraph;
 import org.apache.flink.runtime.executiongraph.ExecutionAttemptID;
 import org.apache.flink.runtime.executiongraph.ExecutionGraph;
 import org.apache.flink.runtime.executiongraph.ExecutionGraphBuilder;
-import org.apache.flink.runtime.executiongraph.ExecutionJobVertex;
 import org.apache.flink.runtime.executiongraph.JobStatusListener;
 import org.apache.flink.runtime.executiongraph.restart.RestartStrategy;
 import org.apache.flink.runtime.executiongraph.restart.RestartStrategyResolving;
@@ -771,16 +770,13 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId> implements JobMast
 
 	@Override
 	public CompletableFuture<OperatorBackPressureStatsResponse> requestOperatorBackPressureStats(final JobVertexID jobVertexId) {
-		final ExecutionJobVertex jobVertex = executionGraph.getJobVertex(jobVertexId);
-		if (jobVertex == null) {
-			return FutureUtils.completedExceptionally(new FlinkException("JobVertexID not found " +
-				jobVertexId));
+		try {
+			final Optional<OperatorBackPressureStats> operatorBackPressureStats = schedulerNG.requestOperatorBackPressureStats(jobVertexId);
+			return CompletableFuture.completedFuture(OperatorBackPressureStatsResponse.of(
+				operatorBackPressureStats.orElse(null)));
+		} catch (FlinkException e) {
+			return FutureUtils.completedExceptionally(e);
 		}
-
-		final Optional<OperatorBackPressureStats> operatorBackPressureStats =
-			backPressureStatsTracker.getOperatorBackPressureStats(jobVertex);
-		return CompletableFuture.completedFuture(OperatorBackPressureStatsResponse.of(
-			operatorBackPressureStats.orElse(null)));
 	}
 
 	@Override
@@ -936,7 +932,7 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId> implements JobMast
 				});
 		}
 
-		this.schedulerNG = new LegacyScheduler(jobGraph, executionGraph, log);
+		this.schedulerNG = new LegacyScheduler(jobGraph, executionGraph, log, backPressureStatsTracker);
 
 		executionGraphAssignedFuture.thenRun(this::scheduleExecutionGraph);
 	}

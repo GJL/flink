@@ -31,11 +31,14 @@ import org.apache.flink.runtime.jobmanager.PartitionProducerDisposedException;
 import org.apache.flink.runtime.messages.FlinkJobNotFoundException;
 import org.apache.flink.runtime.query.KvStateLocation;
 import org.apache.flink.runtime.query.UnknownKvStateLocation;
+import org.apache.flink.runtime.rest.handler.legacy.backpressure.OperatorBackPressureStats;
 import org.apache.flink.runtime.state.KeyGroupRange;
 import org.apache.flink.runtime.taskmanager.TaskExecutionState;
+import org.apache.flink.util.FlinkException;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
+import java.util.Optional;
 
 public interface SchedulerNG {
 
@@ -56,5 +59,7 @@ public interface SchedulerNG {
 	void notifyKvStateUnregistered(JobID jobId, JobVertexID jobVertexId, KeyGroupRange keyGroupRange, String registrationName) throws FlinkJobNotFoundException;
 
 	void updateAccumulators(AccumulatorSnapshot accumulatorSnapshot);
+
+	Optional<OperatorBackPressureStats> requestOperatorBackPressureStats(JobVertexID jobVertexId) throws FlinkException;
 
 }

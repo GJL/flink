@@ -39,14 +39,18 @@ import org.apache.flink.runtime.messages.FlinkJobNotFoundException;
 import org.apache.flink.runtime.query.KvStateLocation;
 import org.apache.flink.runtime.query.KvStateLocationRegistry;
 import org.apache.flink.runtime.query.UnknownKvStateLocation;
+import org.apache.flink.runtime.rest.handler.legacy.backpressure.BackPressureStatsTracker;
+import org.apache.flink.runtime.rest.handler.legacy.backpressure.OperatorBackPressureStats;
 import org.apache.flink.runtime.state.KeyGroupRange;
 import org.apache.flink.runtime.taskmanager.TaskExecutionState;
+import org.apache.flink.util.FlinkException;
 import org.apache.flink.util.InstantiationUtil;
 
 import org.slf4j.Logger;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
+import java.util.Optional;
 
 import static org.apache.flink.util.Preconditions.checkNotNull;
 
@@ -58,10 +62,13 @@ public class LegacyScheduler implements SchedulerNG {
 
 	private final Logger log;
 
-	public LegacyScheduler(final JobGraph jobGraph, final ExecutionGraph executionGraph, final Logger log) {
+	private final BackPressureStatsTracker backPressureStatsTracker;
+
+	public LegacyScheduler(final JobGraph jobGraph, final ExecutionGraph executionGraph, final Logger log, final BackPressureStatsTracker backPressureStatsTracker) {
 		this.jobGraph = checkNotNull(jobGraph);
 		this.executionGraph = checkNotNull(executionGraph);
 		this.log = checkNotNull(log);
+		this.backPressureStatsTracker = checkNotNull(backPressureStatsTracker);
 	}
 
 	@Override
@@ -231,5 +238,16 @@ public class LegacyScheduler implements SchedulerNG {
 	@Override
 	public void updateAccumulators(final AccumulatorSnapshot accumulatorSnapshot) {
 		executionGraph.updateAccumulators(accumulatorSnapshot);
+	}
+
+	@Override
+	public Optional<OperatorBackPressureStats> requestOperatorBackPressureStats(final JobVertexID jobVertexId) throws FlinkException {
+		final ExecutionJobVertex jobVertex = executionGraph.getJobVertex(jobVertexId);
+		if (jobVertex == null) {
+			throw new FlinkException("JobVertexID not found " +
+				jobVertexId);
+		}
+
+		return backPressureStatsTracker.getOperatorBackPressureStats(jobVertex);
 	}
 }
