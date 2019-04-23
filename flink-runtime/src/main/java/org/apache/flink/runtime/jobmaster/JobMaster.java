@@ -66,7 +66,6 @@ import org.apache.flink.runtime.leaderretrieval.LeaderRetrievalListener;
 import org.apache.flink.runtime.leaderretrieval.LeaderRetrievalService;
 import org.apache.flink.runtime.messages.Acknowledge;
 import org.apache.flink.runtime.messages.FlinkJobNotFoundException;
-import org.apache.flink.runtime.messages.checkpoint.AcknowledgeCheckpoint;
 import org.apache.flink.runtime.messages.checkpoint.DeclineCheckpoint;
 import org.apache.flink.runtime.messages.webmonitor.JobDetails;
 import org.apache.flink.runtime.metrics.groups.JobManagerJobMetricGroup;
@@ -440,53 +439,13 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId> implements JobMast
 			final CheckpointMetrics checkpointMetrics,
 			final TaskStateSnapshot checkpointState) {
 
-		final CheckpointCoordinator checkpointCoordinator = executionGraph.getCheckpointCoordinator();
-		final AcknowledgeCheckpoint ackMessage = new AcknowledgeCheckpoint(
-			jobID,
-			executionAttemptID,
-			checkpointId,
-			checkpointMetrics,
-			checkpointState);
-
-		if (checkpointCoordinator != null) {
-			getRpcService().execute(() -> {
-				try {
-					checkpointCoordinator.receiveAcknowledgeMessage(ackMessage);
-				} catch (Throwable t) {
-					log.warn("Error while processing checkpoint acknowledgement message", t);
-				}
-			});
-		} else {
-			String errorMessage = "Received AcknowledgeCheckpoint message for job {} with no CheckpointCoordinator";
-			if (executionGraph.getState() == JobStatus.RUNNING) {
-				log.error(errorMessage, jobGraph.getJobID());
-			} else {
-				log.debug(errorMessage, jobGraph.getJobID());
-			}
-		}
+		schedulerNG.acknowledgeCheckpoint(jobID, executionAttemptID, checkpointId, checkpointMetrics, checkpointState);
 	}
 
 	// TODO: This method needs a leader session ID
 	@Override
 	public void declineCheckpoint(DeclineCheckpoint decline) {
-		final CheckpointCoordinator checkpointCoordinator = executionGraph.getCheckpointCoordinator();
-
-		if (checkpointCoordinator != null) {
-			getRpcService().execute(() -> {
-				try {
-					checkpointCoordinator.receiveDeclineMessage(decline);
-				} catch (Exception e) {
-					log.error("Error in CheckpointCoordinator while processing {}", decline, e);
-				}
-			});
-		} else {
-			String errorMessage = "Received DeclineCheckpoint message for job {} with no CheckpointCoordinator";
-			if (executionGraph.getState() == JobStatus.RUNNING) {
-				log.error(errorMessage, jobGraph.getJobID());
-			} else {
-				log.debug(errorMessage, jobGraph.getJobID());
-			}
-		}
+		schedulerNG.declineCheckpoint(decline);
 	}
 
 	@Override
@@ -889,7 +848,7 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId> implements JobMast
 				});
 		}
 
-		this.schedulerNG = new LegacyScheduler(jobGraph, executionGraph, log, backPressureStatsTracker);
+		this.schedulerNG = new LegacyScheduler(jobGraph, executionGraph, log, backPressureStatsTracker, scheduledExecutorService);
 		this.schedulerNG.setMainThreadExecutor(getMainThreadExecutor());
 
 		executionGraphAssignedFuture.thenRun(this::scheduleExecutionGraph);

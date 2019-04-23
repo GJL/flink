@@ -25,7 +25,9 @@ import org.apache.flink.core.io.InputSplit;
 import org.apache.flink.queryablestate.KvStateID;
 import org.apache.flink.runtime.accumulators.AccumulatorSnapshot;
 import org.apache.flink.runtime.checkpoint.CheckpointCoordinator;
+import org.apache.flink.runtime.checkpoint.CheckpointMetrics;
 import org.apache.flink.runtime.checkpoint.CompletedCheckpoint;
+import org.apache.flink.runtime.checkpoint.TaskStateSnapshot;
 import org.apache.flink.runtime.concurrent.ComponentMainThreadExecutor;
 import org.apache.flink.runtime.execution.ExecutionState;
 import org.apache.flink.runtime.executiongraph.ArchivedExecutionGraph;
@@ -42,6 +44,8 @@ import org.apache.flink.runtime.jobgraph.JobStatus;
 import org.apache.flink.runtime.jobgraph.JobVertexID;
 import org.apache.flink.runtime.jobmanager.PartitionProducerDisposedException;
 import org.apache.flink.runtime.messages.FlinkJobNotFoundException;
+import org.apache.flink.runtime.messages.checkpoint.AcknowledgeCheckpoint;
+import org.apache.flink.runtime.messages.checkpoint.DeclineCheckpoint;
 import org.apache.flink.runtime.messages.webmonitor.JobDetails;
 import org.apache.flink.runtime.query.KvStateLocation;
 import org.apache.flink.runtime.query.KvStateLocationRegistry;
@@ -61,6 +65,7 @@ import java.net.InetSocketAddress;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
+import java.util.concurrent.Executor;
 
 import static org.apache.flink.util.Preconditions.checkNotNull;
 
@@ -76,11 +81,14 @@ public class LegacyScheduler implements SchedulerNG {
 
 	private ComponentMainThreadExecutor mainThreadExecutor;
 
-	public LegacyScheduler(final JobGraph jobGraph, final ExecutionGraph executionGraph, final Logger log, final BackPressureStatsTracker backPressureStatsTracker) {
+	private final Executor ioExecutor;
+
+	public LegacyScheduler(final JobGraph jobGraph, final ExecutionGraph executionGraph, final Logger log, final BackPressureStatsTracker backPressureStatsTracker, final Executor ioExecutor) {
 		this.jobGraph = checkNotNull(jobGraph);
 		this.executionGraph = checkNotNull(executionGraph);
 		this.log = checkNotNull(log);
 		this.backPressureStatsTracker = checkNotNull(backPressureStatsTracker);
+		this.ioExecutor = checkNotNull(ioExecutor);
 	}
 
 	@Override
@@ -314,6 +322,8 @@ public class LegacyScheduler implements SchedulerNG {
 			}, mainThreadExecutor);
 	}
 
+
+
 	private void startCheckpointScheduler(final CheckpointCoordinator checkpointCoordinator) {
 		if (checkpointCoordinator.isPeriodicCheckpointingConfigured()) {
 			try {
@@ -327,5 +337,55 @@ public class LegacyScheduler implements SchedulerNG {
 	@Override
 	public void setMainThreadExecutor(final ComponentMainThreadExecutor mainThreadExecutor) {
 		this.mainThreadExecutor = checkNotNull(mainThreadExecutor);
+	}
+
+	@Override
+	public void acknowledgeCheckpoint(final JobID jobID, final ExecutionAttemptID executionAttemptID, final long checkpointId, final CheckpointMetrics checkpointMetrics, final TaskStateSnapshot checkpointState) {
+		final CheckpointCoordinator checkpointCoordinator = executionGraph.getCheckpointCoordinator();
+		final AcknowledgeCheckpoint ackMessage = new AcknowledgeCheckpoint(
+			jobID,
+			executionAttemptID,
+			checkpointId,
+			checkpointMetrics,
+			checkpointState);
+
+		if (checkpointCoordinator != null) {
+			ioExecutor.execute(() -> {
+				try {
+					checkpointCoordinator.receiveAcknowledgeMessage(ackMessage);
+				} catch (Throwable t) {
+					log.warn("Error while processing checkpoint acknowledgement message", t);
+				}
+			});
+		} else {
+			String errorMessage = "Received AcknowledgeCheckpoint message for job {} with no CheckpointCoordinator";
+			if (executionGraph.getState() == JobStatus.RUNNING) {
+				log.error(errorMessage, jobGraph.getJobID());
+			} else {
+				log.debug(errorMessage, jobGraph.getJobID());
+			}
+		}
+	}
+
+	@Override
+	public void declineCheckpoint(final DeclineCheckpoint decline) {
+		final CheckpointCoordinator checkpointCoordinator = executionGraph.getCheckpointCoordinator();
+
+		if (checkpointCoordinator != null) {
+			ioExecutor.execute(() -> {
+				try {
+					checkpointCoordinator.receiveDeclineMessage(decline);
+				} catch (Exception e) {
+					log.error("Error in CheckpointCoordinator while processing {}", decline, e);
+				}
+			});
+		} else {
+			String errorMessage = "Received DeclineCheckpoint message for job {} with no CheckpointCoordinator";
+			if (executionGraph.getState() == JobStatus.RUNNING) {
+				log.error(errorMessage, jobGraph.getJobID());
+			} else {
+				log.debug(errorMessage, jobGraph.getJobID());
+			}
+		}
 	}
 }
