@@ -92,4 +92,6 @@ public interface SchedulerNG {
 	void declineCheckpoint(DeclineCheckpoint decline);
 
 	void registerJobStatusListener(JobStatusListener jobStatusListener);
+
+	CompletableFuture<String> stopWithSavepoint(String targetDirectory, boolean advanceToEndOfEventTime);
 }
