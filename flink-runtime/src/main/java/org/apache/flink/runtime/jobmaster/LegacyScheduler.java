@@ -20,14 +20,19 @@
 package org.apache.flink.runtime.jobmaster;
 
 import org.apache.flink.api.common.JobID;
+import org.apache.flink.api.common.time.Time;
 import org.apache.flink.configuration.CheckpointingOptions;
 import org.apache.flink.core.io.InputSplit;
 import org.apache.flink.queryablestate.KvStateID;
+import org.apache.flink.runtime.JobException;
 import org.apache.flink.runtime.accumulators.AccumulatorSnapshot;
+import org.apache.flink.runtime.blob.BlobWriter;
 import org.apache.flink.runtime.checkpoint.CheckpointCoordinator;
 import org.apache.flink.runtime.checkpoint.CheckpointMetrics;
+import org.apache.flink.runtime.checkpoint.CheckpointRecoveryFactory;
 import org.apache.flink.runtime.checkpoint.CompletedCheckpoint;
 import org.apache.flink.runtime.checkpoint.TaskStateSnapshot;
+import org.apache.flink.runtime.client.JobExecutionException;
 import org.apache.flink.runtime.concurrent.ComponentMainThreadExecutor;
 import org.apache.flink.runtime.concurrent.FutureUtils;
 import org.apache.flink.runtime.execution.ExecutionState;
@@ -35,20 +40,25 @@ import org.apache.flink.runtime.executiongraph.ArchivedExecutionGraph;
 import org.apache.flink.runtime.executiongraph.Execution;
 import org.apache.flink.runtime.executiongraph.ExecutionAttemptID;
 import org.apache.flink.runtime.executiongraph.ExecutionGraph;
+import org.apache.flink.runtime.executiongraph.ExecutionGraphBuilder;
 import org.apache.flink.runtime.executiongraph.ExecutionGraphException;
 import org.apache.flink.runtime.executiongraph.ExecutionJobVertex;
 import org.apache.flink.runtime.executiongraph.IntermediateResult;
 import org.apache.flink.runtime.executiongraph.JobStatusListener;
+import org.apache.flink.runtime.executiongraph.restart.RestartStrategy;
 import org.apache.flink.runtime.io.network.partition.ResultPartitionID;
 import org.apache.flink.runtime.jobgraph.IntermediateDataSetID;
 import org.apache.flink.runtime.jobgraph.JobGraph;
 import org.apache.flink.runtime.jobgraph.JobStatus;
 import org.apache.flink.runtime.jobgraph.JobVertexID;
+import org.apache.flink.runtime.jobgraph.SavepointRestoreSettings;
 import org.apache.flink.runtime.jobmanager.PartitionProducerDisposedException;
+import org.apache.flink.runtime.jobmaster.slotpool.SlotProvider;
 import org.apache.flink.runtime.messages.FlinkJobNotFoundException;
 import org.apache.flink.runtime.messages.checkpoint.AcknowledgeCheckpoint;
 import org.apache.flink.runtime.messages.checkpoint.DeclineCheckpoint;
 import org.apache.flink.runtime.messages.webmonitor.JobDetails;
+import org.apache.flink.runtime.metrics.groups.JobManagerJobMetricGroup;
 import org.apache.flink.runtime.query.KvStateLocation;
 import org.apache.flink.runtime.query.KvStateLocationRegistry;
 import org.apache.flink.runtime.query.UnknownKvStateLocation;
@@ -59,6 +69,7 @@ import org.apache.flink.runtime.taskmanager.TaskExecutionState;
 import org.apache.flink.runtime.webmonitor.WebMonitorUtils;
 import org.apache.flink.util.FlinkException;
 import org.apache.flink.util.InstantiationUtil;
+import org.apache.flink.util.function.FunctionUtils;
 
 import org.slf4j.Logger;
 
@@ -68,6 +79,7 @@ import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.Executor;
+import java.util.concurrent.ScheduledExecutorService;
 
 import static org.apache.flink.util.Preconditions.checkNotNull;
 
@@ -85,12 +97,110 @@ public class LegacyScheduler implements SchedulerNG {
 
 	private final Executor ioExecutor;
 
-	public LegacyScheduler(final JobGraph jobGraph, final ExecutionGraph executionGraph, final Logger log, final BackPressureStatsTracker backPressureStatsTracker, final Executor ioExecutor) {
+	private final JobMasterConfiguration jobMasterConfiguration;
+
+	private final SlotProvider scheduler;
+
+	private final ScheduledExecutorService futureExecutor;
+
+	private final ClassLoader userCodeLoader;
+
+	private final CheckpointRecoveryFactory checkpointRecoveryFactory;
+
+	private final Time rpcTimeout;
+
+	private final RestartStrategy restartStrategy;
+
+	private final BlobWriter blobWriter;
+
+	public LegacyScheduler(
+			final JobGraph jobGraph,
+			final Logger log,
+			final BackPressureStatsTracker backPressureStatsTracker,
+			final Executor ioExecutor,
+			final JobMasterConfiguration jobMasterConfiguration,
+			final SlotProvider scheduler,
+			final ScheduledExecutorService futureExecutor,
+			final ClassLoader userCodeLoader,
+			final CheckpointRecoveryFactory checkpointRecoveryFactory,
+			final Time rpcTimeout,
+			final RestartStrategy restartStrategy,
+			final BlobWriter blobWriter,
+			final JobManagerJobMetricGroup jobManagerJobMetricGroup) throws Exception {
+
 		this.jobGraph = checkNotNull(jobGraph);
-		this.executionGraph = checkNotNull(executionGraph);
 		this.log = checkNotNull(log);
 		this.backPressureStatsTracker = checkNotNull(backPressureStatsTracker);
 		this.ioExecutor = checkNotNull(ioExecutor);
+		this.jobMasterConfiguration = checkNotNull(jobMasterConfiguration);
+		this.scheduler = checkNotNull(scheduler);
+		this.futureExecutor = checkNotNull(futureExecutor);
+		this.userCodeLoader = checkNotNull(userCodeLoader);
+		this.checkpointRecoveryFactory = checkNotNull(checkpointRecoveryFactory);
+		this.rpcTimeout = checkNotNull(rpcTimeout);
+		this.restartStrategy = checkNotNull(restartStrategy);
+		this.blobWriter = checkNotNull(blobWriter);
+
+		this.executionGraph = createAndRestoreExecutionGraph(jobManagerJobMetricGroup);
+	}
+
+	private ExecutionGraph createAndRestoreExecutionGraph(JobManagerJobMetricGroup currentJobManagerJobMetricGroup) throws Exception {
+
+		ExecutionGraph newExecutionGraph = createExecutionGraph(currentJobManagerJobMetricGroup);
+
+		final CheckpointCoordinator checkpointCoordinator = newExecutionGraph.getCheckpointCoordinator();
+
+		if (checkpointCoordinator != null) {
+			// check whether we find a valid checkpoint
+			if (!checkpointCoordinator.restoreLatestCheckpointedState(
+				newExecutionGraph.getAllVertices(),
+				false,
+				false)) {
+
+				// check whether we can restore from a savepoint
+				tryRestoreExecutionGraphFromSavepoint(newExecutionGraph, jobGraph.getSavepointRestoreSettings());
+			}
+		}
+
+		return newExecutionGraph;
+	}
+
+	private ExecutionGraph createExecutionGraph(JobManagerJobMetricGroup currentJobManagerJobMetricGroup) throws JobExecutionException, JobException {
+		return ExecutionGraphBuilder.buildGraph(
+			null,
+			jobGraph,
+			jobMasterConfiguration.getConfiguration(),
+			futureExecutor,
+			ioExecutor,
+			scheduler,
+			userCodeLoader,
+			checkpointRecoveryFactory,
+			rpcTimeout,
+			restartStrategy,
+			currentJobManagerJobMetricGroup,
+			blobWriter,
+			jobMasterConfiguration.getSlotRequestTimeout(),
+			log);
+	}
+
+	/**
+	 * Tries to restore the given {@link ExecutionGraph} from the provided {@link SavepointRestoreSettings}.
+	 *
+	 * @param executionGraphToRestore {@link ExecutionGraph} which is supposed to be restored
+	 * @param savepointRestoreSettings {@link SavepointRestoreSettings} containing information about the savepoint to restore from
+	 * @throws Exception if the {@link ExecutionGraph} could not be restored
+	 */
+	private void tryRestoreExecutionGraphFromSavepoint(ExecutionGraph executionGraphToRestore, SavepointRestoreSettings savepointRestoreSettings) throws Exception {
+		if (savepointRestoreSettings.restoreSavepoint()) {
+			final CheckpointCoordinator checkpointCoordinator = executionGraphToRestore.getCheckpointCoordinator();
+			if (checkpointCoordinator != null) {
+				checkpointCoordinator.restoreSavepoint(
+					savepointRestoreSettings.getRestorePath(),
+					savepointRestoreSettings.allowNonRestoredState(),
+					executionGraphToRestore.getAllVertices(),
+					userCodeLoader);
+			}
+		}
 	}
 
 	@Override
@@ -111,6 +221,11 @@ public class LegacyScheduler implements SchedulerNG {
 	@Override
 	public void cancel() {
 		executionGraph.cancel();
+	}
+
+	@Override
+	public CompletableFuture<Void> getTerminationFuture() {
+		return executionGraph.getTerminationFuture().thenApply(FunctionUtils.nullFn());
 	}
 
 	@Override
@@ -354,6 +469,7 @@ public class LegacyScheduler implements SchedulerNG {
 	@Override
 	public void setMainThreadExecutor(final ComponentMainThreadExecutor mainThreadExecutor) {
 		this.mainThreadExecutor = checkNotNull(mainThreadExecutor);
+		executionGraph.start(mainThreadExecutor);
 	}
 
 	@Override

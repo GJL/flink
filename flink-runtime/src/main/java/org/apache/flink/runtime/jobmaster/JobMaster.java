@@ -25,21 +25,16 @@ import org.apache.flink.api.common.restartstrategy.RestartStrategies;
 import org.apache.flink.api.common.time.Time;
 import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.queryablestate.KvStateID;
-import org.apache.flink.runtime.JobException;
 import org.apache.flink.runtime.accumulators.AccumulatorSnapshot;
 import org.apache.flink.runtime.blob.BlobWriter;
-import org.apache.flink.runtime.checkpoint.CheckpointCoordinator;
 import org.apache.flink.runtime.checkpoint.CheckpointMetrics;
 import org.apache.flink.runtime.checkpoint.TaskStateSnapshot;
-import org.apache.flink.runtime.client.JobExecutionException;
 import org.apache.flink.runtime.clusterframework.types.AllocationID;
 import org.apache.flink.runtime.clusterframework.types.ResourceID;
 import org.apache.flink.runtime.concurrent.FutureUtils;
 import org.apache.flink.runtime.execution.ExecutionState;
 import org.apache.flink.runtime.executiongraph.ArchivedExecutionGraph;
 import org.apache.flink.runtime.executiongraph.ExecutionAttemptID;
-import org.apache.flink.runtime.executiongraph.ExecutionGraph;
-import org.apache.flink.runtime.executiongraph.ExecutionGraphBuilder;
 import org.apache.flink.runtime.executiongraph.JobStatusListener;
 import org.apache.flink.runtime.executiongraph.restart.RestartStrategy;
 import org.apache.flink.runtime.executiongraph.restart.RestartStrategyResolving;
@@ -53,7 +48,6 @@ import org.apache.flink.runtime.jobgraph.IntermediateDataSetID;
 import org.apache.flink.runtime.jobgraph.JobGraph;
 import org.apache.flink.runtime.jobgraph.JobStatus;
 import org.apache.flink.runtime.jobgraph.JobVertexID;
-import org.apache.flink.runtime.jobgraph.SavepointRestoreSettings;
 import org.apache.flink.runtime.jobmanager.OnCompletionActions;
 import org.apache.flink.runtime.jobmanager.PartitionProducerDisposedException;
 import org.apache.flink.runtime.jobmaster.factories.JobManagerJobMetricGroupFactory;
@@ -181,8 +175,6 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId> implements JobMast
 
 	// -------- Mutable fields ---------
 
-	private ExecutionGraph executionGraph;
-
 	private SchedulerNG schedulerNG;
 
 	@Nullable
@@ -274,13 +266,30 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId> implements JobMast
 		this.backPressureStatsTracker = checkNotNull(jobManagerSharedServices.getBackPressureStatsTracker());
 
 		this.jobManagerJobMetricGroup = jobMetricGroupFactory.create(jobGraph);
-		this.executionGraph = createAndRestoreExecutionGraph(jobManagerJobMetricGroup);
+		this.schedulerNG = createScheduler(jobManagerJobMetricGroup);
 		this.jobStatusListener = null;
 
 		this.resourceManagerConnection = null;
 		this.establishedResourceManagerConnection = null;
 
 		this.accumulators = new HashMap<>();
+	}
+
+	private SchedulerNG createScheduler(final JobManagerJobMetricGroup jobManagerJobMetricGroup) throws Exception {
+		return new LegacyScheduler(
+			jobGraph,
+			log,
+			backPressureStatsTracker,
+			scheduledExecutorService,
+			jobMasterConfiguration,
+			scheduler,
+			scheduledExecutorService,
+			userCodeLoader,
+			highAvailabilityServices.getCheckpointRecoveryFactory(),
+			rpcTimeout,
+			restartStrategy,
+			blobWriter,
+			jobManagerJobMetricGroup);
 	}
 
 	//----------------------------------------------------------------------------------------------
@@ -693,7 +702,7 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId> implements JobMast
 
 		log.info("Starting execution of job {} ({}) under job master id {}.", jobGraph.getName(), jobGraph.getJobID(), newJobMasterId);
 
-		resetAndScheduleExecutionGraph();
+		resetAndStartScheduler();
 
 		return Acknowledge.get();
 	}
@@ -754,7 +763,7 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId> implements JobMast
 			log.warn("Failed to stop resource manager leader retriever when suspending.", t);
 		}
 
-		suspendAndClearExecutionGraphFields(cause);
+		suspendAndClearSchedulerFields(cause);
 
 		// the slot pool stops receiving messages and clears its pooled slots
 		slotPool.suspend();
@@ -765,45 +774,43 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId> implements JobMast
 		return Acknowledge.get();
 	}
 
-	private void assignExecutionGraph(
-			ExecutionGraph newExecutionGraph,
+	private void assignScheduler(
+			SchedulerNG newScheduler,
 			JobManagerJobMetricGroup newJobManagerJobMetricGroup) {
 		validateRunsInMainThread();
-		checkState(executionGraph.getState().isTerminalState());
+		checkState(schedulerNG.requestJobStatus().isTerminalState());
 		checkState(jobManagerJobMetricGroup == null);
 
-		executionGraph = newExecutionGraph;
+		schedulerNG = newScheduler;
 		jobManagerJobMetricGroup = newJobManagerJobMetricGroup;
 	}
 
-	private void resetAndScheduleExecutionGraph() throws Exception {
+	private void resetAndStartScheduler() throws Exception {
 		validateRunsInMainThread();
 
-		final CompletableFuture<Void> executionGraphAssignedFuture;
+		final CompletableFuture<Void> schedulerAssignedFuture;
 
-		if (executionGraph.getState() == JobStatus.CREATED) {
-			executionGraphAssignedFuture = CompletableFuture.completedFuture(null);
-			executionGraph.start(getMainThreadExecutor());
+		if (schedulerNG.requestJobStatus() == JobStatus.CREATED) {
+			schedulerAssignedFuture = CompletableFuture.completedFuture(null);
+			schedulerNG.setMainThreadExecutor(getMainThreadExecutor());
 		} else {
-			suspendAndClearExecutionGraphFields(new FlinkException("ExecutionGraph is being reset in order to be rescheduled."));
+			suspendAndClearSchedulerFields(new FlinkException("ExecutionGraph is being reset in order to be rescheduled."));
 			final JobManagerJobMetricGroup newJobManagerJobMetricGroup = jobMetricGroupFactory.create(jobGraph);
-			final ExecutionGraph newExecutionGraph = createAndRestoreExecutionGraph(newJobManagerJobMetricGroup);
+			final SchedulerNG newScheduler = createScheduler(newJobManagerJobMetricGroup);
 
-			executionGraphAssignedFuture = executionGraph.getTerminationFuture().handle(
-				(JobStatus ignored, Throwable throwable) -> {
-					newExecutionGraph.start(getMainThreadExecutor());
-					assignExecutionGraph(newExecutionGraph, newJobManagerJobMetricGroup);
+			schedulerAssignedFuture = schedulerNG.getTerminationFuture().handle(
+				(ignored, throwable) -> {
+					newScheduler.setMainThreadExecutor(getMainThreadExecutor());
+					assignScheduler(newScheduler, newJobManagerJobMetricGroup);
 					return null;
-				});
+				}
+			);
 		}
 
-		this.schedulerNG = new LegacyScheduler(jobGraph, executionGraph, log, backPressureStatsTracker, scheduledExecutorService);
-		this.schedulerNG.setMainThreadExecutor(getMainThreadExecutor());
-
-		executionGraphAssignedFuture.thenRun(this::scheduleExecutionGraph);
+		schedulerAssignedFuture.thenRun(this::startScheduling);
 	}
 
-	private void scheduleExecutionGraph() {
+	private void startScheduling() {
 		checkState(jobStatusListener == null);
 		// register self as job status change listener
 		jobStatusListener = new JobManagerJobStatusListener();
@@ -812,51 +819,12 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId> implements JobMast
 		schedulerNG.startScheduling();
 	}
 
-	private ExecutionGraph createAndRestoreExecutionGraph(JobManagerJobMetricGroup currentJobManagerJobMetricGroup) throws Exception {
-
-		ExecutionGraph newExecutionGraph = createExecutionGraph(currentJobManagerJobMetricGroup);
-
-		final CheckpointCoordinator checkpointCoordinator = newExecutionGraph.getCheckpointCoordinator();
-
-		if (checkpointCoordinator != null) {
-			// check whether we find a valid checkpoint
-			if (!checkpointCoordinator.restoreLatestCheckpointedState(
-				newExecutionGraph.getAllVertices(),
-				false,
-				false)) {
-
-				// check whether we can restore from a savepoint
-				tryRestoreExecutionGraphFromSavepoint(newExecutionGraph, jobGraph.getSavepointRestoreSettings());
-			}
-		}
-
-		return newExecutionGraph;
+	private void suspendAndClearSchedulerFields(Exception cause) {
+		suspendScheduler(cause);
+		clearSchedulerFields();
 	}
 
-	private ExecutionGraph createExecutionGraph(JobManagerJobMetricGroup currentJobManagerJobMetricGroup) throws JobExecutionException, JobException {
-		return ExecutionGraphBuilder.buildGraph(
-			null,
-			jobGraph,
-			jobMasterConfiguration.getConfiguration(),
-			scheduledExecutorService,
-			scheduledExecutorService,
-			scheduler,
-			userCodeLoader,
-			highAvailabilityServices.getCheckpointRecoveryFactory(),
-			rpcTimeout,
-			restartStrategy,
-			currentJobManagerJobMetricGroup,
-			blobWriter,
-			jobMasterConfiguration.getSlotRequestTimeout(),
-			log);
-	}
-
-	private void suspendAndClearExecutionGraphFields(Exception cause) {
-		suspendExecutionGraph(cause);
-		clearExecutionGraphFields();
-	}
-
-	private void suspendExecutionGraph(Exception cause) {
+	private void suspendScheduler(Exception cause) {
 		schedulerNG.suspend(cause);
 
 		if (jobManagerJobMetricGroup != null) {
@@ -868,29 +836,9 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId> implements JobMast
 		}
 	}
 
-	private void clearExecutionGraphFields() {
+	private void clearSchedulerFields() {
 		jobManagerJobMetricGroup = null;
 		jobStatusListener = null;
-	}
-
-	/**
-	 * Tries to restore the given {@link ExecutionGraph} from the provided {@link SavepointRestoreSettings}.
-	 *
-	 * @param executionGraphToRestore {@link ExecutionGraph} which is supposed to be restored
-	 * @param savepointRestoreSettings {@link SavepointRestoreSettings} containing information about the savepoint to restore from
-	 * @throws Exception if the {@link ExecutionGraph} could not be restored
-	 */
-	private void tryRestoreExecutionGraphFromSavepoint(ExecutionGraph executionGraphToRestore, SavepointRestoreSettings savepointRestoreSettings) throws Exception {
-		if (savepointRestoreSettings.restoreSavepoint()) {
-			final CheckpointCoordinator checkpointCoordinator = executionGraphToRestore.getCheckpointCoordinator();
-			if (checkpointCoordinator != null) {
-				checkpointCoordinator.restoreSavepoint(
-					savepointRestoreSettings.getRestorePath(),
-					savepointRestoreSettings.allowNonRestoredState(),
-					executionGraphToRestore.getAllVertices(),
-					userCodeLoader);
-			}
-		}
 	}
 
 	//----------------------------------------------------------------------------------------------
