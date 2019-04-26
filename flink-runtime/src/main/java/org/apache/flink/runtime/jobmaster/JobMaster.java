@@ -277,8 +277,8 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId> implements JobMast
 
 	private SchedulerNG createScheduler(final JobManagerJobMetricGroup jobManagerJobMetricGroup) throws Exception {
 		return new LegacyScheduler(
-			jobGraph,
 			log,
+			jobGraph,
 			backPressureStatsTracker,
 			scheduledExecutorService,
 			jobMasterConfiguration,

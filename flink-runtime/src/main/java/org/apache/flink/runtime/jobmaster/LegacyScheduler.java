@@ -114,8 +114,8 @@ public class LegacyScheduler implements SchedulerNG {
 	private final BlobWriter blobWriter;
 
 	public LegacyScheduler(
-			final JobGraph jobGraph,
 			final Logger log,
+			final JobGraph jobGraph,
 			final BackPressureStatsTracker backPressureStatsTracker,
 			final Executor ioExecutor,
 			final JobMasterConfiguration jobMasterConfiguration,
@@ -128,8 +128,8 @@ public class LegacyScheduler implements SchedulerNG {
 			final BlobWriter blobWriter,
 			final JobManagerJobMetricGroup jobManagerJobMetricGroup) throws Exception {
 
-		this.jobGraph = checkNotNull(jobGraph);
 		this.log = checkNotNull(log);
+		this.jobGraph = checkNotNull(jobGraph);
 		this.backPressureStatsTracker = checkNotNull(backPressureStatsTracker);
 		this.ioExecutor = checkNotNull(ioExecutor);
 		this.jobMasterConfiguration = checkNotNull(jobMasterConfiguration);
