@@ -85,15 +85,13 @@ import static org.apache.flink.util.Preconditions.checkNotNull;
 
 public class LegacyScheduler implements SchedulerNG {
 
+	private final Logger log;
+
 	private final JobGraph jobGraph;
 
 	private final ExecutionGraph executionGraph;
 
-	private final Logger log;
-
 	private final BackPressureStatsTracker backPressureStatsTracker;
-
-	private ComponentMainThreadExecutor mainThreadExecutor;
 
 	private final Executor ioExecutor;
 
@@ -112,6 +110,8 @@ public class LegacyScheduler implements SchedulerNG {
 	private final RestartStrategy restartStrategy;
 
 	private final BlobWriter blobWriter;
+
+	private ComponentMainThreadExecutor mainThreadExecutor;
 
 	public LegacyScheduler(
 			final Logger log,
