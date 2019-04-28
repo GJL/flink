@@ -209,6 +209,17 @@ public class LegacyScheduler implements SchedulerNG {
 	}
 
 	@Override
+	public void setMainThreadExecutor(final ComponentMainThreadExecutor mainThreadExecutor) {
+		this.mainThreadExecutor = checkNotNull(mainThreadExecutor);
+		executionGraph.start(mainThreadExecutor);
+	}
+
+	@Override
+	public void registerJobStatusListener(final JobStatusListener jobStatusListener) {
+		executionGraph.registerJobStatusListener(jobStatusListener);
+	}
+
+	@Override
 	public void startScheduling() {
 		try {
 			executionGraph.scheduleForExecution();
@@ -323,6 +334,21 @@ public class LegacyScheduler implements SchedulerNG {
 	}
 
 	@Override
+	public ArchivedExecutionGraph requestJob() {
+		return ArchivedExecutionGraph.createFrom(executionGraph);
+	}
+
+	@Override
+	public JobStatus requestJobStatus() {
+		return executionGraph.getState();
+	}
+
+	@Override
+	public JobDetails requestJobDetails() {
+		return WebMonitorUtils.createDetailsForJob(executionGraph);
+	}
+
+	@Override
 	public KvStateLocation requestKvStateLocation(final JobID jobId, final String registrationName) throws UnknownKvStateLocation, FlinkJobNotFoundException {
 		// sanity check for the correct JobID
 		if (jobGraph.getJobID().equals(jobId)) {
@@ -409,21 +435,6 @@ public class LegacyScheduler implements SchedulerNG {
 	}
 
 	@Override
-	public ArchivedExecutionGraph requestJob() {
-		return ArchivedExecutionGraph.createFrom(executionGraph);
-	}
-
-	@Override
-	public JobStatus requestJobStatus() {
-		return executionGraph.getState();
-	}
-
-	@Override
-	public JobDetails requestJobDetails() {
-		return WebMonitorUtils.createDetailsForJob(executionGraph);
-	}
-
-	@Override
 	public CompletableFuture<String> triggerSavepoint(final String targetDirectory, final boolean cancelJob) {
 		final CheckpointCoordinator checkpointCoordinator = executionGraph.getCheckpointCoordinator();
 		if (checkpointCoordinator == null) {
@@ -469,12 +480,6 @@ public class LegacyScheduler implements SchedulerNG {
 				// Concurrent shut down of the coordinator
 			}
 		}
-	}
-
-	@Override
-	public void setMainThreadExecutor(final ComponentMainThreadExecutor mainThreadExecutor) {
-		this.mainThreadExecutor = checkNotNull(mainThreadExecutor);
-		executionGraph.start(mainThreadExecutor);
 	}
 
 	@Override
@@ -525,11 +530,6 @@ public class LegacyScheduler implements SchedulerNG {
 				log.debug(errorMessage, jobGraph.getJobID());
 			}
 		}
-	}
-
-	@Override
-	public void registerJobStatusListener(final JobStatusListener jobStatusListener) {
-		executionGraph.registerJobStatusListener(jobStatusListener);
 	}
 
 	@Override

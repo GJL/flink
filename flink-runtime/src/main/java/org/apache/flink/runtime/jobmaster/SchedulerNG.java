@@ -53,6 +53,10 @@ import java.util.concurrent.CompletableFuture;
 
 public interface SchedulerNG {
 
+	void setMainThreadExecutor(ComponentMainThreadExecutor mainThreadExecutor);
+
+	void registerJobStatusListener(JobStatusListener jobStatusListener);
+
 	void startScheduling();
 
 	void suspend(Throwable cause);
@@ -69,31 +73,37 @@ public interface SchedulerNG {
 
 	void scheduleOrUpdateConsumers(ResultPartitionID partitionID);
 
-	KvStateLocation requestKvStateLocation(JobID jobId, String registrationName) throws UnknownKvStateLocation, FlinkJobNotFoundException;
-
-	void notifyKvStateRegistered(JobID jobId, JobVertexID jobVertexId, KeyGroupRange keyGroupRange, String registrationName, KvStateID kvStateId, InetSocketAddress kvStateServerAddress) throws FlinkJobNotFoundException;
-
-	void notifyKvStateUnregistered(JobID jobId, JobVertexID jobVertexId, KeyGroupRange keyGroupRange, String registrationName) throws FlinkJobNotFoundException;
-
-	void updateAccumulators(AccumulatorSnapshot accumulatorSnapshot);
-
-	Optional<OperatorBackPressureStats> requestOperatorBackPressureStats(JobVertexID jobVertexId) throws FlinkException;
-
 	ArchivedExecutionGraph requestJob();
 
 	JobStatus requestJobStatus();
 
 	JobDetails requestJobDetails();
 
-	CompletableFuture<String> triggerSavepoint(@Nullable String targetDirectory, boolean cancelJob);
+	// ------------------------------------------------------------------------------------
+	// Methods below do not belong to Scheduler but are included due to historical reasons
+	// ------------------------------------------------------------------------------------
 
-	void setMainThreadExecutor(ComponentMainThreadExecutor mainThreadExecutor);
+	KvStateLocation requestKvStateLocation(JobID jobId, String registrationName) throws UnknownKvStateLocation, FlinkJobNotFoundException;
+
+	void notifyKvStateRegistered(JobID jobId, JobVertexID jobVertexId, KeyGroupRange keyGroupRange, String registrationName, KvStateID kvStateId, InetSocketAddress kvStateServerAddress) throws FlinkJobNotFoundException;
+
+	void notifyKvStateUnregistered(JobID jobId, JobVertexID jobVertexId, KeyGroupRange keyGroupRange, String registrationName) throws FlinkJobNotFoundException;
+
+	// ------------------------------------------------------------------------
+
+	void updateAccumulators(AccumulatorSnapshot accumulatorSnapshot);
+
+	// ------------------------------------------------------------------------
+
+	Optional<OperatorBackPressureStats> requestOperatorBackPressureStats(JobVertexID jobVertexId) throws FlinkException;
+
+	// ------------------------------------------------------------------------
+
+	CompletableFuture<String> triggerSavepoint(@Nullable String targetDirectory, boolean cancelJob);
 
 	void acknowledgeCheckpoint(JobID jobID, ExecutionAttemptID executionAttemptID, long checkpointId, CheckpointMetrics checkpointMetrics, TaskStateSnapshot checkpointState);
 
 	void declineCheckpoint(DeclineCheckpoint decline);
-
-	void registerJobStatusListener(JobStatusListener jobStatusListener);
 
 	CompletableFuture<String> stopWithSavepoint(String targetDirectory, boolean advanceToEndOfEventTime);
 }
