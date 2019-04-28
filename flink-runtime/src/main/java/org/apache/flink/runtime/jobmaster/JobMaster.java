@@ -281,7 +281,7 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId> implements JobMast
 			jobGraph,
 			backPressureStatsTracker,
 			scheduledExecutorService,
-			jobMasterConfiguration,
+			jobMasterConfiguration.getConfiguration(),
 			scheduler,
 			scheduledExecutorService,
 			userCodeLoader,
@@ -289,7 +289,8 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId> implements JobMast
 			rpcTimeout,
 			restartStrategy,
 			blobWriter,
-			jobManagerJobMetricGroup);
+			jobManagerJobMetricGroup,
+			jobMasterConfiguration.getSlotRequestTimeout());
 	}
 
 	//----------------------------------------------------------------------------------------------

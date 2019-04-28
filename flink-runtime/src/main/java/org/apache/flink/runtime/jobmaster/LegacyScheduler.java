@@ -22,6 +22,7 @@ package org.apache.flink.runtime.jobmaster;
 import org.apache.flink.api.common.JobID;
 import org.apache.flink.api.common.time.Time;
 import org.apache.flink.configuration.CheckpointingOptions;
+import org.apache.flink.configuration.Configuration;
 import org.apache.flink.core.io.InputSplit;
 import org.apache.flink.queryablestate.KvStateID;
 import org.apache.flink.runtime.JobException;
@@ -95,7 +96,7 @@ public class LegacyScheduler implements SchedulerNG {
 
 	private final Executor ioExecutor;
 
-	private final JobMasterConfiguration jobMasterConfiguration;
+	private final Configuration jobMasterConfiguration;
 
 	private final SlotProvider slotProvider;
 
@@ -111,6 +112,8 @@ public class LegacyScheduler implements SchedulerNG {
 
 	private final BlobWriter blobWriter;
 
+	private final Time slotRequestTimeout;
+
 	private ComponentMainThreadExecutor mainThreadExecutor;
 
 	public LegacyScheduler(
@@ -118,7 +121,7 @@ public class LegacyScheduler implements SchedulerNG {
 			final JobGraph jobGraph,
 			final BackPressureStatsTracker backPressureStatsTracker,
 			final Executor ioExecutor,
-			final JobMasterConfiguration jobMasterConfiguration,
+			final Configuration jobMasterConfiguration,
 			final SlotProvider slotProvider,
 			final ScheduledExecutorService futureExecutor,
 			final ClassLoader userCodeLoader,
@@ -126,7 +129,8 @@ public class LegacyScheduler implements SchedulerNG {
 			final Time rpcTimeout,
 			final RestartStrategy restartStrategy,
 			final BlobWriter blobWriter,
-			final JobManagerJobMetricGroup jobManagerJobMetricGroup) throws Exception {
+			final JobManagerJobMetricGroup jobManagerJobMetricGroup,
+			final Time slotRequestTimeout) throws Exception {
 
 		this.log = checkNotNull(log);
 		this.jobGraph = checkNotNull(jobGraph);
@@ -140,6 +144,7 @@ public class LegacyScheduler implements SchedulerNG {
 		this.rpcTimeout = checkNotNull(rpcTimeout);
 		this.restartStrategy = checkNotNull(restartStrategy);
 		this.blobWriter = checkNotNull(blobWriter);
+		this.slotRequestTimeout = checkNotNull(slotRequestTimeout);
 
 		this.executionGraph = createAndRestoreExecutionGraph(jobManagerJobMetricGroup);
 	}
@@ -169,7 +174,7 @@ public class LegacyScheduler implements SchedulerNG {
 		return ExecutionGraphBuilder.buildGraph(
 			null,
 			jobGraph,
-			jobMasterConfiguration.getConfiguration(),
+			jobMasterConfiguration,
 			futureExecutor,
 			ioExecutor,
 			slotProvider,
@@ -179,7 +184,7 @@ public class LegacyScheduler implements SchedulerNG {
 			restartStrategy,
 			currentJobManagerJobMetricGroup,
 			blobWriter,
-			jobMasterConfiguration.getSlotRequestTimeout(),
+			slotRequestTimeout,
 			log);
 	}
 
