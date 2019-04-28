@@ -97,7 +97,7 @@ public class LegacyScheduler implements SchedulerNG {
 
 	private final JobMasterConfiguration jobMasterConfiguration;
 
-	private final SlotProvider scheduler;
+	private final SlotProvider slotProvider;
 
 	private final ScheduledExecutorService futureExecutor;
 
@@ -119,7 +119,7 @@ public class LegacyScheduler implements SchedulerNG {
 			final BackPressureStatsTracker backPressureStatsTracker,
 			final Executor ioExecutor,
 			final JobMasterConfiguration jobMasterConfiguration,
-			final SlotProvider scheduler,
+			final SlotProvider slotProvider,
 			final ScheduledExecutorService futureExecutor,
 			final ClassLoader userCodeLoader,
 			final CheckpointRecoveryFactory checkpointRecoveryFactory,
@@ -133,7 +133,7 @@ public class LegacyScheduler implements SchedulerNG {
 		this.backPressureStatsTracker = checkNotNull(backPressureStatsTracker);
 		this.ioExecutor = checkNotNull(ioExecutor);
 		this.jobMasterConfiguration = checkNotNull(jobMasterConfiguration);
-		this.scheduler = checkNotNull(scheduler);
+		this.slotProvider = checkNotNull(slotProvider);
 		this.futureExecutor = checkNotNull(futureExecutor);
 		this.userCodeLoader = checkNotNull(userCodeLoader);
 		this.checkpointRecoveryFactory = checkNotNull(checkpointRecoveryFactory);
@@ -172,7 +172,7 @@ public class LegacyScheduler implements SchedulerNG {
 			jobMasterConfiguration.getConfiguration(),
 			futureExecutor,
 			ioExecutor,
-			scheduler,
+			slotProvider,
 			userCodeLoader,
 			checkpointRecoveryFactory,
 			rpcTimeout,
