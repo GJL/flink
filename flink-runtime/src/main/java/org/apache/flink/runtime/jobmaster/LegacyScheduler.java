@@ -87,6 +87,11 @@ import java.util.concurrent.ScheduledExecutorService;
 
 import static org.apache.flink.util.Preconditions.checkNotNull;
 
+/**
+ * A scheduler that delegates to the scheduling logic in the {@link ExecutionGraph}.
+ *
+ * @see ExecutionGraph#scheduleForExecution()
+ */
 public class LegacyScheduler implements SchedulerNG {
 
 	private final Logger log;
