@@ -20,6 +20,7 @@
 package org.apache.flink.runtime.jobmaster;
 
 import org.apache.flink.api.common.JobID;
+import org.apache.flink.api.common.restartstrategy.RestartStrategies;
 import org.apache.flink.api.common.time.Time;
 import org.apache.flink.configuration.CheckpointingOptions;
 import org.apache.flink.configuration.Configuration;
@@ -47,6 +48,8 @@ import org.apache.flink.runtime.executiongraph.ExecutionJobVertex;
 import org.apache.flink.runtime.executiongraph.IntermediateResult;
 import org.apache.flink.runtime.executiongraph.JobStatusListener;
 import org.apache.flink.runtime.executiongraph.restart.RestartStrategy;
+import org.apache.flink.runtime.executiongraph.restart.RestartStrategyFactory;
+import org.apache.flink.runtime.executiongraph.restart.RestartStrategyResolving;
 import org.apache.flink.runtime.io.network.partition.ResultPartitionID;
 import org.apache.flink.runtime.jobgraph.IntermediateDataSetID;
 import org.apache.flink.runtime.jobgraph.JobGraph;
@@ -127,7 +130,7 @@ public class LegacyScheduler implements SchedulerNG {
 			final ClassLoader userCodeLoader,
 			final CheckpointRecoveryFactory checkpointRecoveryFactory,
 			final Time rpcTimeout,
-			final RestartStrategy restartStrategy,
+			final RestartStrategyFactory restartStrategyFactory,
 			final BlobWriter blobWriter,
 			final JobManagerJobMetricGroup jobManagerJobMetricGroup,
 			final Time slotRequestTimeout) throws Exception {
@@ -142,7 +145,18 @@ public class LegacyScheduler implements SchedulerNG {
 		this.userCodeLoader = checkNotNull(userCodeLoader);
 		this.checkpointRecoveryFactory = checkNotNull(checkpointRecoveryFactory);
 		this.rpcTimeout = checkNotNull(rpcTimeout);
-		this.restartStrategy = checkNotNull(restartStrategy);
+
+		final RestartStrategies.RestartStrategyConfiguration restartStrategyConfiguration =
+			jobGraph.getSerializedExecutionConfig()
+				.deserializeValue(userCodeLoader)
+				.getRestartStrategy();
+
+		this.restartStrategy = RestartStrategyResolving.resolve(restartStrategyConfiguration,
+			restartStrategyFactory,
+			jobGraph.isCheckpointingEnabled());
+
+		log.info("Using restart strategy {} for {} ({}).", this.restartStrategy, jobGraph.getName(), jobGraph.getJobID());
+
 		this.blobWriter = checkNotNull(blobWriter);
 		this.slotRequestTimeout = checkNotNull(slotRequestTimeout);
 

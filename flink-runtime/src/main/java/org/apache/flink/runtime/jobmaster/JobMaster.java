@@ -18,10 +18,8 @@
 
 package org.apache.flink.runtime.jobmaster;
 
-import org.apache.flink.annotation.VisibleForTesting;
 import org.apache.flink.api.common.JobID;
 import org.apache.flink.api.common.functions.AggregateFunction;
-import org.apache.flink.api.common.restartstrategy.RestartStrategies;
 import org.apache.flink.api.common.time.Time;
 import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.queryablestate.KvStateID;
@@ -36,8 +34,6 @@ import org.apache.flink.runtime.execution.ExecutionState;
 import org.apache.flink.runtime.executiongraph.ArchivedExecutionGraph;
 import org.apache.flink.runtime.executiongraph.ExecutionAttemptID;
 import org.apache.flink.runtime.executiongraph.JobStatusListener;
-import org.apache.flink.runtime.executiongraph.restart.RestartStrategy;
-import org.apache.flink.runtime.executiongraph.restart.RestartStrategyResolving;
 import org.apache.flink.runtime.heartbeat.HeartbeatListener;
 import org.apache.flink.runtime.heartbeat.HeartbeatManager;
 import org.apache.flink.runtime.heartbeat.HeartbeatServices;
@@ -159,7 +155,7 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId> implements JobMast
 
 	private final Scheduler scheduler;
 
-	private final RestartStrategy restartStrategy;
+	private final SchedulerNGFactory schedulerNGFactory;
 
 	// --------- BackPressure --------
 
@@ -209,7 +205,8 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId> implements JobMast
 			JobManagerJobMetricGroupFactory jobMetricGroupFactory,
 			OnCompletionActions jobCompletionActions,
 			FatalErrorHandler fatalErrorHandler,
-			ClassLoader userCodeLoader) throws Exception {
+			ClassLoader userCodeLoader,
+			SchedulerNGFactory schedulerNGFactory) throws Exception {
 
 		super(rpcService, AkkaRpcServiceUtils.createRandomName(JOB_MANAGER_NAME));
 
@@ -225,6 +222,7 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId> implements JobMast
 		this.jobCompletionActions = checkNotNull(jobCompletionActions);
 		this.fatalErrorHandler = checkNotNull(fatalErrorHandler);
 		this.userCodeLoader = checkNotNull(userCodeLoader);
+		this.schedulerNGFactory = checkNotNull(schedulerNGFactory);
 		this.jobMetricGroupFactory = checkNotNull(jobMetricGroupFactory);
 
 		this.taskManagerHeartbeatManager = heartbeatServices.createHeartbeatManagerSender(
@@ -243,17 +241,6 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId> implements JobMast
 		final JobID jid = jobGraph.getJobID();
 
 		log.info("Initializing job {} ({}).", jobName, jid);
-
-		final RestartStrategies.RestartStrategyConfiguration restartStrategyConfiguration =
-				jobGraph.getSerializedExecutionConfig()
-						.deserializeValue(userCodeLoader)
-						.getRestartStrategy();
-
-		this.restartStrategy = RestartStrategyResolving.resolve(restartStrategyConfiguration,
-			jobManagerSharedServices.getRestartStrategyFactory(),
-			jobGraph.isCheckpointingEnabled());
-
-		log.info("Using restart strategy {} for {} ({}).", this.restartStrategy, jobName, jid);
 
 		resourceManagerLeaderRetriever = highAvailabilityServices.getResourceManagerLeaderRetriever();
 
@@ -276,7 +263,7 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId> implements JobMast
 	}
 
 	private SchedulerNG createScheduler(final JobManagerJobMetricGroup jobManagerJobMetricGroup) throws Exception {
-		return new LegacyScheduler(
+		return schedulerNGFactory.createInstance(
 			log,
 			jobGraph,
 			backPressureStatsTracker,
@@ -287,7 +274,6 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId> implements JobMast
 			userCodeLoader,
 			highAvailabilityServices.getCheckpointRecoveryFactory(),
 			rpcTimeout,
-			restartStrategy,
 			blobWriter,
 			jobManagerJobMetricGroup,
 			jobMasterConfiguration.getSlotRequestTimeout());
@@ -1155,11 +1141,6 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId> implements JobMast
 		public CompletableFuture<Void> retrievePayload(ResourceID resourceID) {
 			return CompletableFuture.completedFuture(null);
 		}
-	}
-
-	@VisibleForTesting
-	RestartStrategy getRestartStrategy() {
-		return restartStrategy;
 	}
 }
 
