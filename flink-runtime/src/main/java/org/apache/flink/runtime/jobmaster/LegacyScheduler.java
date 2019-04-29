@@ -117,7 +117,9 @@ public class LegacyScheduler implements SchedulerNG {
 
 	private final Time slotRequestTimeout;
 
-	private ComponentMainThreadExecutor mainThreadExecutor;
+	private ComponentMainThreadExecutor mainThreadExecutor = new ComponentMainThreadExecutor.DummyComponentMainThreadExecutor(
+		"LegacyScheduler is not initialized with proper main thread executor. " +
+			"Call to LegacyScheduler.setMainThreadExecutor(...) required.");
 
 	public LegacyScheduler(
 			final Logger log,
@@ -235,6 +237,8 @@ public class LegacyScheduler implements SchedulerNG {
 
 	@Override
 	public void startScheduling() {
+		mainThreadExecutor.assertRunningInMainThread();
+
 		try {
 			executionGraph.scheduleForExecution();
 		}
@@ -245,11 +249,13 @@ public class LegacyScheduler implements SchedulerNG {
 
 	@Override
 	public void suspend(Throwable cause) {
+		mainThreadExecutor.assertRunningInMainThread();
 		executionGraph.suspend(cause);
 	}
 
 	@Override
 	public void cancel() {
+		mainThreadExecutor.assertRunningInMainThread();
 		executionGraph.cancel();
 	}
 
@@ -260,11 +266,13 @@ public class LegacyScheduler implements SchedulerNG {
 
 	@Override
 	public boolean updateTaskExecutionState(final TaskExecutionState taskExecutionState) {
+		mainThreadExecutor.assertRunningInMainThread();
 		return executionGraph.updateState(taskExecutionState);
 	}
 
 	@Override
 	public SerializedInputSplit requestNextInputSplit(JobVertexID vertexID, ExecutionAttemptID executionAttempt) throws IOException {
+		mainThreadExecutor.assertRunningInMainThread();
 
 		final Execution execution = executionGraph.getRegisteredExecutions().get(executionAttempt);
 		if (execution == null) {
@@ -311,6 +319,8 @@ public class LegacyScheduler implements SchedulerNG {
 			final IntermediateDataSetID intermediateResultId,
 			final ResultPartitionID resultPartitionId) throws PartitionProducerDisposedException {
 
+		mainThreadExecutor.assertRunningInMainThread();
+
 		final Execution execution = executionGraph.getRegisteredExecutions().get(resultPartitionId.getProducerId());
 		if (execution != null) {
 			return execution.getState();
@@ -340,6 +350,8 @@ public class LegacyScheduler implements SchedulerNG {
 
 	@Override
 	public void scheduleOrUpdateConsumers(final ResultPartitionID partitionID) {
+		mainThreadExecutor.assertRunningInMainThread();
+
 		try {
 			executionGraph.scheduleOrUpdateConsumers(partitionID);
 		} catch (ExecutionGraphException e) {
@@ -349,6 +361,7 @@ public class LegacyScheduler implements SchedulerNG {
 
 	@Override
 	public ArchivedExecutionGraph requestJob() {
+		mainThreadExecutor.assertRunningInMainThread();
 		return ArchivedExecutionGraph.createFrom(executionGraph);
 	}
 
@@ -359,11 +372,14 @@ public class LegacyScheduler implements SchedulerNG {
 
 	@Override
 	public JobDetails requestJobDetails() {
+		mainThreadExecutor.assertRunningInMainThread();
 		return WebMonitorUtils.createDetailsForJob(executionGraph);
 	}
 
 	@Override
 	public KvStateLocation requestKvStateLocation(final JobID jobId, final String registrationName) throws UnknownKvStateLocation, FlinkJobNotFoundException {
+		mainThreadExecutor.assertRunningInMainThread();
+
 		// sanity check for the correct JobID
 		if (jobGraph.getJobID().equals(jobId)) {
 			if (log.isDebugEnabled()) {
@@ -388,6 +404,8 @@ public class LegacyScheduler implements SchedulerNG {
 
 	@Override
 	public void notifyKvStateRegistered(final JobID jobId, final JobVertexID jobVertexId, final KeyGroupRange keyGroupRange, final String registrationName, final KvStateID kvStateId, final InetSocketAddress kvStateServerAddress) throws FlinkJobNotFoundException {
+		mainThreadExecutor.assertRunningInMainThread();
+
 		if (jobGraph.getJobID().equals(jobId)) {
 			if (log.isDebugEnabled()) {
 				log.debug("Key value state registered for job {} under name {}.",
@@ -411,6 +429,8 @@ public class LegacyScheduler implements SchedulerNG {
 
 	@Override
 	public void notifyKvStateUnregistered(final JobID jobId, final JobVertexID jobVertexId, final KeyGroupRange keyGroupRange, final String registrationName) throws FlinkJobNotFoundException {
+		mainThreadExecutor.assertRunningInMainThread();
+
 		if (jobGraph.getJobID().equals(jobId)) {
 			if (log.isDebugEnabled()) {
 				log.debug("Key value state unregistered for job {} under name {}.",
@@ -434,6 +454,8 @@ public class LegacyScheduler implements SchedulerNG {
 
 	@Override
 	public void updateAccumulators(final AccumulatorSnapshot accumulatorSnapshot) {
+		mainThreadExecutor.assertRunningInMainThread();
+
 		executionGraph.updateAccumulators(accumulatorSnapshot);
 	}
 
@@ -450,6 +472,8 @@ public class LegacyScheduler implements SchedulerNG {
 
 	@Override
 	public CompletableFuture<String> triggerSavepoint(final String targetDirectory, final boolean cancelJob) {
+		mainThreadExecutor.assertRunningInMainThread();
+
 		final CheckpointCoordinator checkpointCoordinator = executionGraph.getCheckpointCoordinator();
 		if (checkpointCoordinator == null) {
 			throw new IllegalStateException(
@@ -487,6 +511,8 @@ public class LegacyScheduler implements SchedulerNG {
 
 
 	private void startCheckpointScheduler(final CheckpointCoordinator checkpointCoordinator) {
+		mainThreadExecutor.assertRunningInMainThread();
+
 		if (checkpointCoordinator.isPeriodicCheckpointingConfigured()) {
 			try {
 				checkpointCoordinator.startCheckpointScheduler();
@@ -498,6 +524,8 @@ public class LegacyScheduler implements SchedulerNG {
 
 	@Override
 	public void acknowledgeCheckpoint(final JobID jobID, final ExecutionAttemptID executionAttemptID, final long checkpointId, final CheckpointMetrics checkpointMetrics, final TaskStateSnapshot checkpointState) {
+		mainThreadExecutor.assertRunningInMainThread();
+
 		final CheckpointCoordinator checkpointCoordinator = executionGraph.getCheckpointCoordinator();
 		final AcknowledgeCheckpoint ackMessage = new AcknowledgeCheckpoint(
 			jobID,
@@ -526,6 +554,8 @@ public class LegacyScheduler implements SchedulerNG {
 
 	@Override
 	public void declineCheckpoint(final DeclineCheckpoint decline) {
+		mainThreadExecutor.assertRunningInMainThread();
+
 		final CheckpointCoordinator checkpointCoordinator = executionGraph.getCheckpointCoordinator();
 
 		if (checkpointCoordinator != null) {
@@ -548,6 +578,8 @@ public class LegacyScheduler implements SchedulerNG {
 
 	@Override
 	public CompletableFuture<String> stopWithSavepoint(final String targetDirectory, final boolean advanceToEndOfEventTime) {
+		mainThreadExecutor.assertRunningInMainThread();
+
 		final CheckpointCoordinator checkpointCoordinator = executionGraph.getCheckpointCoordinator();
 
 		if (checkpointCoordinator == null) {
