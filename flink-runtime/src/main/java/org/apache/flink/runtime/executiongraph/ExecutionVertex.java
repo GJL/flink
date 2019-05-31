@@ -661,7 +661,6 @@ public class ExecutionVertex implements AccessExecutionVertex, Archiveable<Archi
 			allPreviousExecutionGraphAllocationIds);
 	}
 
-	@VisibleForTesting
 	public void deployToSlot(LogicalSlot slot) throws JobException {
 		if (currentExecution.tryAssignResource(slot)) {
 			currentExecution.deploy();

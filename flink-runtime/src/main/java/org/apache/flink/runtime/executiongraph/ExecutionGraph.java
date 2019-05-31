@@ -898,6 +898,12 @@ public class ExecutionGraph implements AccessExecutionGraph {
 		failoverStrategy.notifyNewVertices(newExecJobVertices);
 	}
 
+	public void scheduleForExecutionNG() {
+		if (!transitionState(JobStatus.CREATED, JobStatus.RUNNING)) {
+			throw new IllegalStateException("Job may only be scheduled from state " + JobStatus.CREATED);
+		}
+	}
+
 	public void scheduleForExecution() throws JobException {
 
 		assertRunningInJobMasterMainThread();
@@ -1576,6 +1582,47 @@ public class ExecutionGraph implements AccessExecutionGraph {
 	// --------------------------------------------------------------------------------------------
 	//  Callbacks and Callback Utilities
 	// --------------------------------------------------------------------------------------------
+
+	public boolean updateStateNG(TaskExecutionState state) {
+		assertRunningInJobMasterMainThread();
+		final Execution attempt = currentExecutions.get(state.getID());
+
+		if (attempt != null) {
+				Map<String, Accumulator<?, ?>> accumulators;
+
+				switch (state.getExecutionState()) {
+					case RUNNING:
+						return attempt.switchToRunning();
+
+					case FINISHED:
+						// this deserialization is exception-free
+						accumulators = deserializeAccumulators(state);
+						attempt.markFinished(accumulators, state.getIOMetrics());
+						return true;
+
+					case CANCELED:
+						// this deserialization is exception-free
+						accumulators = deserializeAccumulators(state);
+						attempt.completeCancelling(accumulators, state.getIOMetrics());
+						return true;
+
+					case FAILED:
+						// this deserialization is exception-free
+						accumulators = deserializeAccumulators(state);
+						attempt.markFailed(state.getError(userClassLoader), accumulators, state.getIOMetrics());
+						return true;
+
+					default:
+						// we mark as failed and return false, which triggers the TaskManager
+						// to remove the task
+						attempt.fail(new Exception("TaskManager sent illegal state update: " + state.getExecutionState()));
+						return false;
+				}
+		}
+		else {
+			return false;
+		}
+	}
 
 	/**
 	 * Updates the state of one of the ExecutionVertex's Execution attempts.

@@ -327,4 +327,12 @@ public class RestartPipelinedRegionStrategy implements FailoverStrategy {
 			failedPartitions.remove(resultPartitionID);
 		}
 	}
+
+	public static class Factory implements FailoverStrategy.Factory {
+
+		@Override
+		public FailoverStrategy create(final FailoverTopology topology) {
+			return new RestartPipelinedRegionStrategy(topology);
+		}
+	}
 }

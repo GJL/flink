@@ -29,7 +29,7 @@ public interface FailoverStrategy {
 	/**
 	 * Returns a set of IDs corresponding to the set of vertices that should be restarted.
 	 *
-	 * @param executionVertexId ID of the failed task
+		 * @param executionVertexId ID of the failed task
 	 * @param cause cause of the failure
 	 * @return set of IDs of vertices to restart
 	 */

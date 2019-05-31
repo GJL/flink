@@ -45,6 +45,7 @@ import org.apache.flink.runtime.executiongraph.ExecutionGraph;
 import org.apache.flink.runtime.executiongraph.ExecutionGraphBuilder;
 import org.apache.flink.runtime.executiongraph.ExecutionGraphException;
 import org.apache.flink.runtime.executiongraph.ExecutionJobVertex;
+import org.apache.flink.runtime.executiongraph.ExecutionVertex;
 import org.apache.flink.runtime.executiongraph.IntermediateResult;
 import org.apache.flink.runtime.executiongraph.JobStatusListener;
 import org.apache.flink.runtime.executiongraph.restart.RestartStrategy;
@@ -69,6 +70,9 @@ import org.apache.flink.runtime.query.KvStateLocationRegistry;
 import org.apache.flink.runtime.query.UnknownKvStateLocation;
 import org.apache.flink.runtime.rest.handler.legacy.backpressure.BackPressureStatsTracker;
 import org.apache.flink.runtime.rest.handler.legacy.backpressure.OperatorBackPressureStats;
+import org.apache.flink.runtime.scheduler.adapter.ExecutionGraphToSchedulingTopologyAdapter;
+import org.apache.flink.runtime.scheduler.strategy.ExecutionVertexID;
+import org.apache.flink.runtime.scheduler.strategy.SchedulingTopology;
 import org.apache.flink.runtime.state.KeyGroupRange;
 import org.apache.flink.runtime.taskmanager.TaskExecutionState;
 import org.apache.flink.runtime.taskmanager.TaskManagerLocation;
@@ -171,6 +175,41 @@ public class LegacyScheduler implements SchedulerNG {
 
 		this.executionGraph = createAndRestoreExecutionGraph(jobManagerJobMetricGroup);
 	}
+
+	// ------------------------------------------------------------------------
+	// Scheduler Base
+	// ------------------------------------------------------------------------
+
+	void updateState(TaskExecutionState taskExecutionState) {
+		executionGraph.updateState(taskExecutionState);
+	}
+
+	SchedulingTopology getSchedulingTopology() {
+		return new ExecutionGraphToSchedulingTopologyAdapter(executionGraph);
+	}
+
+	void scheduleForExecution() {
+		executionGraph.scheduleForExecutionNG();
+	}
+
+	Optional<ExecutionVertexID> getExecutionVertexId(final ExecutionAttemptID executionAttemptId) {
+		return Optional.ofNullable(executionGraph.getRegisteredExecutions().get(executionAttemptId))
+			.map(this::getExecutionVertexID);
+	}
+
+	ExecutionVertex getExecutionVertex(final ExecutionVertexID executionVertexId) {
+		return executionGraph.getAllVertices().get(executionVertexId.getJobVertexId()).getTaskVertices()[executionVertexId.getSubtaskIndex()];
+	}
+
+	private ExecutionVertexID getExecutionVertexID(final Execution execution) {
+		return new ExecutionVertexID(execution.getVertex().getJobvertexId(), execution.getVertex().getParallelSubtaskIndex());
+	}
+
+	JobGraph getJobGraph() {
+		return jobGraph;
+	}
+
+	// ------------------------------------------------------------------------
 
 	private ExecutionGraph createAndRestoreExecutionGraph(JobManagerJobMetricGroup currentJobManagerJobMetricGroup) throws Exception {
 

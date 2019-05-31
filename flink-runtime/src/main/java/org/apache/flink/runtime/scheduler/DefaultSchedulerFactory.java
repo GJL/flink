@@ -23,10 +23,17 @@ import org.apache.flink.api.common.time.Time;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.runtime.blob.BlobWriter;
 import org.apache.flink.runtime.checkpoint.CheckpointRecoveryFactory;
+import org.apache.flink.runtime.executiongraph.failover.flip1.DumbFailoverTopology;
+import org.apache.flink.runtime.executiongraph.failover.flip1.ExecutionFailureHandler;
+import org.apache.flink.runtime.executiongraph.failover.flip1.NeverRestartBackoffTimeStrategy;
+import org.apache.flink.runtime.executiongraph.failover.flip1.RestartPipelinedRegionStrategy;
 import org.apache.flink.runtime.jobgraph.JobGraph;
+import org.apache.flink.runtime.jobgraph.ScheduleMode;
 import org.apache.flink.runtime.jobmaster.slotpool.SlotProvider;
 import org.apache.flink.runtime.metrics.groups.JobManagerJobMetricGroup;
 import org.apache.flink.runtime.rest.handler.legacy.backpressure.BackPressureStatsTracker;
+import org.apache.flink.runtime.scheduler.strategy.EagerSchedulingStrategy;
+import org.apache.flink.runtime.scheduler.strategy.SchedulingStrategyFactory;
 
 import org.slf4j.Logger;
 
@@ -54,6 +61,11 @@ public class DefaultSchedulerFactory implements SchedulerNGFactory {
 			final JobManagerJobMetricGroup jobManagerJobMetricGroup,
 			final Time slotRequestTimeout) throws Exception {
 
+		final SchedulingStrategyFactory schedulingStrategyFactory = createSchedulingStrategyFactory(jobGraph.getScheduleMode());
+		final RestartPipelinedRegionStrategy failoverStrategy = new RestartPipelinedRegionStrategy(DumbFailoverTopology.INSTANCE);
+		final ExecutionFailureHandler executionFailureHandler = new ExecutionFailureHandler(failoverStrategy, NeverRestartBackoffTimeStrategy.INSTANCE);
+		final DumbExecutionSlotAllocator executionSlotAllocator = new DumbExecutionSlotAllocator(slotProvider);
+
 		return new DefaultScheduler(
 			log,
 			jobGraph,
@@ -67,7 +79,18 @@ public class DefaultSchedulerFactory implements SchedulerNGFactory {
 			rpcTimeout,
 			blobWriter,
 			jobManagerJobMetricGroup,
-			slotRequestTimeout);
+			slotRequestTimeout,
+			schedulingStrategyFactory,
+			executionSlotAllocator,
+			executionFailureHandler);
 	}
 
+	private SchedulingStrategyFactory createSchedulingStrategyFactory(final ScheduleMode scheduleMode) {
+		switch (scheduleMode) {
+			case EAGER:
+				return new EagerSchedulingStrategy.Factory();
+			default:
+				throw new IllegalStateException("Unsupported schedule mode " + scheduleMode);
+		}
+	}
 }

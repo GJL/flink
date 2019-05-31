@@ -119,8 +119,8 @@ public class MiniClusterConfiguration {
 	 */
 	public static class Builder {
 		private Configuration configuration = new Configuration();
-		private int numTaskManagers = 1;
-		private int numSlotsPerTaskManager = 1;
+		private int numTaskManagers = 2;
+		private int numSlotsPerTaskManager = 2;
 		private RpcServiceSharing rpcServiceSharing = SHARED;
 		@Nullable
 		private String commonBindAddress = null;

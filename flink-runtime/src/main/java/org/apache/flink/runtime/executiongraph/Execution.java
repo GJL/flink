@@ -294,8 +294,7 @@ public class Execution implements AccessExecution, Archiveable<ArchivedExecution
 	 * @param logicalSlot to assign to this execution
 	 * @return true if the slot could be assigned to the execution, otherwise false
 	 */
-	@VisibleForTesting
-	boolean tryAssignResource(final LogicalSlot logicalSlot) {
+	public boolean tryAssignResource(final LogicalSlot logicalSlot) {
 
 		assertRunningInJobMasterMainThread();
 
@@ -1261,20 +1260,14 @@ public class Execution implements AccessExecution, Archiveable<ArchivedExecution
 				// or it was canceled really fast
 			}
 			else if (currentState == CANCELING || currentState == FAILED) {
-				if (LOG.isDebugEnabled()) {
-					// this log statement is guarded because the 'getVertexWithAttempt()' method
-					// performs string concatenations
-					LOG.debug("Concurrent canceling/failing of {} while deployment was in progress.", getVertexWithAttempt());
-				}
+				LOG.debug("Concurrent canceling/failing of {} while deployment was in progress.", getVertexWithAttempt());
 				sendCancelRpcCall(NUM_CANCEL_CALL_TRIES);
 			}
 			else {
 				String message = String.format("Concurrent unexpected state transition of task %s to %s while deployment was in progress.",
 						getVertexWithAttempt(), currentState);
 
-				if (LOG.isDebugEnabled()) {
-					LOG.debug(message);
-				}
+				LOG.debug(message);
 
 				// undo the deployment
 				sendCancelRpcCall(NUM_CANCEL_CALL_TRIES);

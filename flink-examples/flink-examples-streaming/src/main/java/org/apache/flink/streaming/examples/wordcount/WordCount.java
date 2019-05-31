@@ -20,6 +20,8 @@ package org.apache.flink.streaming.examples.wordcount;
 import org.apache.flink.api.common.functions.FlatMapFunction;
 import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.api.java.utils.ParameterTool;
+import org.apache.flink.configuration.Configuration;
+import org.apache.flink.configuration.JobManagerOptions;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.examples.wordcount.util.WordCountData;
@@ -54,7 +56,10 @@ public class WordCount {
 		final ParameterTool params = ParameterTool.fromArgs(args);
 
 		// set up the execution environment
-		final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+		final Configuration configuration = new Configuration();
+		configuration.setString(JobManagerOptions.SCHEDULER, "ng");
+
+		final StreamExecutionEnvironment env = StreamExecutionEnvironment.createLocalEnvironment(1, configuration);
 
 		// make parameters available in the web interface
 		env.getConfig().setGlobalJobParameters(params);
