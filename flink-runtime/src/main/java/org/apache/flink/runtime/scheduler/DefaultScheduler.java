@@ -77,9 +77,11 @@ public class DefaultScheduler extends LegacyScheduler implements SchedulerOperat
 
 	private final ScheduledExecutorService futureExecutor;
 
-	private Comparator<SlotExecutionVertexAssignment> bla;
+	private Comparator<SlotExecutionVertexAssignment> slotExecutionVertexAssignmentComparator;
 
 	private SchedulingStrategy schedulingStrategy;
+
+	private final ExecutionVertexVersioner executionVertexVersioner = new ExecutionVertexVersioner();
 
 	public DefaultScheduler(
 			final Logger log,
@@ -120,7 +122,7 @@ public class DefaultScheduler extends LegacyScheduler implements SchedulerOperat
 		this.schedulingStrategyFactory = schedulingStrategyFactory;
 		this.executionSlotAllocator = executionSlotAllocator;
 		this.executionFailureHandler = executionFailureHandler;
-		this.bla = Comparator.comparing(
+		this.slotExecutionVertexAssignmentComparator = Comparator.comparing(
 			SlotExecutionVertexAssignment::getExecutionVertexId,
 			new ExecutionVertexIDTopologicalComparator(jobGraph));
 	}
@@ -156,53 +158,80 @@ public class DefaultScheduler extends LegacyScheduler implements SchedulerOperat
 
 	private void maybeHandleTaskFailure(final TaskExecutionState taskExecutionState, final ExecutionVertexID executionVertexId) {
 		if (taskExecutionState.getExecutionState() == ExecutionState.FAILED) {
-			final FailureHandlingResult failureHandlingResult = executionFailureHandler.getFailureHandlingResult(
-				executionVertexId,
-				taskExecutionState.getError(userCodeLoader));
-
-			maybeRestartTasks(failureHandlingResult);
+			final Throwable error = taskExecutionState.getError(userCodeLoader);
+			handleTaskFailure(executionVertexId, error);
 		}
+	}
+
+	private void handleTaskFailure(final ExecutionVertexID executionVertexId, final Throwable error) {
+		final FailureHandlingResult failureHandlingResult = executionFailureHandler.getFailureHandlingResult(executionVertexId, error);
+		maybeRestartTasks(failureHandlingResult);
 	}
 
 	private void maybeRestartTasks(final FailureHandlingResult failureHandlingResult) {
 		if (failureHandlingResult.canRestart()) {
 			restartTasksWithDelay(failureHandlingResult);
+		} else {
+			// TODO: else fail job forever
 		}
 	}
 
 	private void restartTasksWithDelay(final FailureHandlingResult failureHandlingResult) {
 		final Set<ExecutionVertexID> verticesToRestart = failureHandlingResult.getVerticesToRestart();
+		// TODO: logic correct? invalidate ongoing deployments, i.e., increase version for EVs
+
 		final CompletableFuture<?> cancelFuture = cancelTasksAsync(verticesToRestart);
+
+		final Set<ExecutionVertexVersion> executionVertexVersions = verticesToRestart.stream()
+			.map(executionVertexVersioner::recordModification)
+			.collect(Collectors.toSet());
+
 		futureExecutor.schedule(
-			() -> cancelFuture.whenComplete(restartTasksOrHandleError(verticesToRestart)),
+			() -> cancelFuture.whenComplete(restartTasksOrHandleError(executionVertexVersions)),
 			failureHandlingResult.getRestartDelayMS(),
 			TimeUnit.MILLISECONDS);
 	}
 
-	private BiConsumer<Object, Throwable> restartTasksOrHandleError(final Set<ExecutionVertexID> verticesToRestart) {
+	private BiConsumer<Object, Throwable> restartTasksOrHandleError(final Set<ExecutionVertexVersion> executionVertexVersions) {
 		return (Object ignored, Throwable throwable) -> {
 			if (throwable == null) {
-				// TODO: check global mod version
+				// TODO: logic correct?     checkversion of all tasks
+				// TODO: warum sollte man das jetzt nicht rufen? (1) während man wartet, hat ein anderer schon neugestartet
+
+				final Set<ExecutionVertexID> verticesToRestart = getUnmodifiedExecutionVertices(executionVertexVersions);
+
+				// TODO: handle runtime exceptions of strategy
 				schedulingStrategy.restartTasks(verticesToRestart);
 			} else {
-				// TODO: fatal error
+				// TODO: error while canceling ~> fatal error?
 			}
 		};
 	}
 
+	private Set<ExecutionVertexID> getUnmodifiedExecutionVertices(final Set<ExecutionVertexVersion> executionVertexVersions) {
+		return executionVertexVersions.stream()
+			.filter(executionVertexVersion -> !executionVertexVersioner.isModified(executionVertexVersion))
+			.map(ExecutionVertexVersion::getExecutionVertexId)
+			.collect(Collectors.toSet());
+	}
+
 	private CompletableFuture<?> cancelTasksAsync(final Set<ExecutionVertexID> verticesToRestart) {
 		final List<CompletableFuture<?>> cancelFutures = verticesToRestart.stream()
-			.map(executionVertexID -> getExecutionVertex(executionVertexID).cancel())
+			.map(executionVertexId -> cancelExecutionVertex(executionVertexId))
 			.collect(Collectors.toList());
 
 		return FutureUtils.combineAll(cancelFutures);
+	}
+
+	private CompletableFuture<?> cancelExecutionVertex(final ExecutionVertexID executionVertexId) {
+		return getExecutionVertex(executionVertexId).cancel();
 	}
 
 	@Override
 	public void scheduleOrUpdateConsumers(final ResultPartitionID partitionID) {
 		// TODO: implement, for now: noop
 
-		LOG.info("scheduleOrUpdateConsumers");
+		LOG.debug("scheduleOrUpdateConsumers");
 	}
 
 	// ------------------------------------------------------------------------
@@ -212,13 +241,18 @@ public class DefaultScheduler extends LegacyScheduler implements SchedulerOperat
 	@Override
 	public void allocateSlotsAndDeploy(final Collection<ExecutionVertexDeploymentOption> executionVertexDeploymentOptions) {
 		final List<SlotExecutionVertexAssignment> slotExecutionVertexAssignments = new ArrayList<>(allocateSlots(executionVertexDeploymentOptions));
-		slotExecutionVertexAssignments.sort(bla);
+		slotExecutionVertexAssignments.sort(slotExecutionVertexAssignmentComparator);
 
 		CompletableFuture<?> predecessorFuture = CompletableFuture.completedFuture(null);
+
 		for (SlotExecutionVertexAssignment slotExecutionVertexAssignment : slotExecutionVertexAssignments) {
+
+			final ExecutionVertexVersion executionVertexVersion = executionVertexVersioner.recordModification(slotExecutionVertexAssignment.getExecutionVertexId());
+
 			final CompletableFuture<LogicalSlot> logicalSlotCompletableFuture = slotExecutionVertexAssignment.getLogicalSlotFuture()
 				.thenCombine(predecessorFuture, (logicalSlot, ignored) -> logicalSlot)
-				.whenComplete(deployTaskOrHandleError(slotExecutionVertexAssignment.getExecutionVertexId()));
+				.whenComplete(deployTaskOrHandleError(executionVertexVersion));
+
 			predecessorFuture = logicalSlotCompletableFuture;
 		}
 	}
@@ -229,24 +263,6 @@ public class DefaultScheduler extends LegacyScheduler implements SchedulerOperat
 					.map(ExecutionVertexDeploymentOption::getExecutionVertexId)
 					.map(this::createSchedulingRequirements)
 					.collect(Collectors.toList()));
-	}
-
-	private BiConsumer<LogicalSlot, Throwable> deployTaskOrHandleError(final ExecutionVertexID executionVertexId) {
-		return (logicalSlot, throwable) -> {
-			if (throwable == null) {
-				final ExecutionVertex executionVertex = getExecutionVertex(executionVertexId);
-				try {
-					// TODO: check if version matches, i.e., deployment should be conducted, maybe do before calling this
-					// TODO: reset for new execution
-					executionVertex.deployToSlot(logicalSlot);
-				} catch (JobException e) {
-					e.printStackTrace();
-				}
-			} else {
-				// TODO: handle failure
-				throwable.printStackTrace();
-			}
-		};
 	}
 
 	private ExecutionVertexSchedulingRequirements createSchedulingRequirements(final ExecutionVertexID executionVertexId) {
@@ -261,5 +277,33 @@ public class DefaultScheduler extends LegacyScheduler implements SchedulerOperat
 			executionVertex.getLocationConstraint(),
 			null,
 			Collections.emptyList());
+	}
+
+	private BiConsumer<LogicalSlot, Throwable> deployTaskOrHandleError(final ExecutionVertexVersion executionVertexVersion) {
+		return (logicalSlot, throwable) -> {
+
+			if (executionVertexVersioner.isModified(executionVertexVersion)) {
+				// TODO: logic correct?
+				return;
+			}
+
+			final ExecutionVertexID executionVertexId = executionVertexVersion.getExecutionVertexId();
+			if (throwable == null) {
+				deployToSlot(logicalSlot, executionVertexId);
+			} else {
+				handleTaskFailure(executionVertexId, throwable);
+			}
+		};
+	}
+
+	private void deployToSlot(final LogicalSlot logicalSlot, final ExecutionVertexID executionVertexId) {
+		final ExecutionVertex executionVertex = getExecutionVertex(executionVertexId);
+		try {
+			// TODO: reset for new execution
+			executionVertex.deployToSlot(logicalSlot);
+		} catch (JobException e) {
+			// TODO: logic correct?
+			handleTaskFailure(executionVertexId, e);
+		}
 	}
 }
