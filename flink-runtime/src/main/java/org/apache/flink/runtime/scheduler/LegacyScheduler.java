@@ -180,6 +180,10 @@ public class LegacyScheduler implements SchedulerNG {
 	// Scheduler Base
 	// ------------------------------------------------------------------------
 
+	ComponentMainThreadExecutor getMainThreadExecutor() {
+		return mainThreadExecutor;
+	}
+
 	void updateState(TaskExecutionState taskExecutionState) {
 		executionGraph.updateState(taskExecutionState);
 	}

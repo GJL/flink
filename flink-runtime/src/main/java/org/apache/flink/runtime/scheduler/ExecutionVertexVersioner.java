@@ -37,7 +37,7 @@ class ExecutionVertexVersioner {
 	public boolean isModified(final ExecutionVertexVersion executionVertexVersion) {
 		final Long currentVersion = executionVertexToVersion.get(executionVertexVersion.getExecutionVertexId());
 		Preconditions.checkState(currentVersion != null);
-		return currentVersion == executionVertexVersion.getVersion();
+		return currentVersion != executionVertexVersion.getVersion();
 	}
 
 }

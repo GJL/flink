@@ -58,6 +58,7 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BiConsumer;
+import java.util.function.BiFunction;
 import java.util.stream.Collectors;
 
 /**
@@ -178,21 +179,20 @@ public class DefaultScheduler extends LegacyScheduler implements SchedulerOperat
 
 	private void restartTasksWithDelay(final FailureHandlingResult failureHandlingResult) {
 		final Set<ExecutionVertexID> verticesToRestart = failureHandlingResult.getVerticesToRestart();
-		// TODO: logic correct? invalidate ongoing deployments, i.e., increase version for EVs
-
-		final CompletableFuture<?> cancelFuture = cancelTasksAsync(verticesToRestart);
-
 		final Set<ExecutionVertexVersion> executionVertexVersions = verticesToRestart.stream()
 			.map(executionVertexVersioner::recordModification)
 			.collect(Collectors.toSet());
 
+		final CompletableFuture<?> cancelFuture = cancelTasksAsync(verticesToRestart);
+
 		futureExecutor.schedule(
-			() -> cancelFuture.whenComplete(restartTasksOrHandleError(executionVertexVersions)),
+			// TODO: futureutils
+			() -> cancelFuture.handleAsync(restartTasksOrHandleError(executionVertexVersions), getMainThreadExecutor()),
 			failureHandlingResult.getRestartDelayMS(),
 			TimeUnit.MILLISECONDS);
 	}
 
-	private BiConsumer<Object, Throwable> restartTasksOrHandleError(final Set<ExecutionVertexVersion> executionVertexVersions) {
+	private BiFunction<Object, Throwable, Void> restartTasksOrHandleError(final Set<ExecutionVertexVersion> executionVertexVersions) {
 		return (Object ignored, Throwable throwable) -> {
 			if (throwable == null) {
 				// TODO: logic correct?     checkversion of all tasks
@@ -205,6 +205,8 @@ public class DefaultScheduler extends LegacyScheduler implements SchedulerOperat
 			} else {
 				// TODO: error while canceling ~> fatal error?
 			}
+
+			return null;
 		};
 	}
 
@@ -251,6 +253,7 @@ public class DefaultScheduler extends LegacyScheduler implements SchedulerOperat
 
 			final CompletableFuture<LogicalSlot> logicalSlotCompletableFuture = slotExecutionVertexAssignment.getLogicalSlotFuture()
 				.thenCombine(predecessorFuture, (logicalSlot, ignored) -> logicalSlot)
+				// TODO: reihenfolge
 				.whenComplete(deployTaskOrHandleError(executionVertexVersion));
 
 			predecessorFuture = logicalSlotCompletableFuture;
@@ -283,7 +286,6 @@ public class DefaultScheduler extends LegacyScheduler implements SchedulerOperat
 		return (logicalSlot, throwable) -> {
 
 			if (executionVertexVersioner.isModified(executionVertexVersion)) {
-				// TODO: logic correct?
 				return;
 			}
 
