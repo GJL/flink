@@ -269,7 +269,7 @@ public class ExecutionGraph implements AccessExecutionGraph {
 	private volatile JobStatus state = JobStatus.CREATED;
 
 	/** A future that completes once the job has reached a terminal state. */
-	private volatile CompletableFuture<JobStatus> terminationFuture;
+	private final CompletableFuture<JobStatus> terminationFuture = new CompletableFuture<>();
 
 	/** On each global recovery, this version is incremented. The version breaks conflicts
 	 * between concurrent restart attempts by local failover strategies. */
@@ -894,7 +894,6 @@ public class ExecutionGraph implements AccessExecutionGraph {
 			newExecJobVertices.add(ejv);
 		}
 
-		terminationFuture = new CompletableFuture<>();
 		failoverStrategy.notifyNewVertices(newExecJobVertices);
 	}
 
@@ -1239,7 +1238,7 @@ public class ExecutionGraph implements AccessExecutionGraph {
 				}
 
 				final ConjunctFuture<Void> allTerminal = FutureUtils.waitForAll(futures);
-				allTerminal.whenComplete(
+				FutureUtils.assertNoException(allTerminal.handle(
 					(Void ignored, Throwable throwable) -> {
 						if (throwable != null) {
 							transitionState(
@@ -1249,7 +1248,8 @@ public class ExecutionGraph implements AccessExecutionGraph {
 						} else {
 							allVerticesInTerminalState(globalVersionForRestart);
 						}
-					});
+						return null;
+					}));
 
 				return;
 			}
