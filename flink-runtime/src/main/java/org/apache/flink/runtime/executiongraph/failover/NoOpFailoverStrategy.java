@@ -32,7 +32,6 @@ public class ThrowingFailoverStrategy extends FailoverStrategy {
 
 	@Override
 	public void onTaskFailure(final Execution taskExecution, final Throwable cause) {
-		throw new IllegalStateException();
 	}
 
 	@Override
