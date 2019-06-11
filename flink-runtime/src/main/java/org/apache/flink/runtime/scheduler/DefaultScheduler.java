@@ -27,13 +27,17 @@ import org.apache.flink.runtime.checkpoint.CheckpointRecoveryFactory;
 import org.apache.flink.runtime.clusterframework.types.AllocationID;
 import org.apache.flink.runtime.clusterframework.types.ResourceProfile;
 import org.apache.flink.runtime.concurrent.FutureUtils;
+import org.apache.flink.runtime.concurrent.ScheduledExecutor;
 import org.apache.flink.runtime.execution.ExecutionState;
 import org.apache.flink.runtime.executiongraph.ExecutionVertex;
 import org.apache.flink.runtime.executiongraph.failover.flip1.ExecutionFailureHandler;
+import org.apache.flink.runtime.executiongraph.failover.flip1.FailoverStrategy;
 import org.apache.flink.runtime.executiongraph.failover.flip1.FailureHandlingResult;
+import org.apache.flink.runtime.executiongraph.failover.flip1.RestartBackoffTimeStrategy;
 import org.apache.flink.runtime.executiongraph.restart.ThrowingRestartStrategy;
 import org.apache.flink.runtime.io.network.partition.ResultPartitionID;
 import org.apache.flink.runtime.jobgraph.JobGraph;
+import org.apache.flink.runtime.jobmanager.scheduler.SlotSharingGroup;
 import org.apache.flink.runtime.jobmaster.LogicalSlot;
 import org.apache.flink.runtime.jobmaster.slotpool.SlotProvider;
 import org.apache.flink.runtime.metrics.groups.JobManagerJobMetricGroup;
@@ -61,6 +65,8 @@ import java.util.function.BiConsumer;
 import java.util.function.BiFunction;
 import java.util.stream.Collectors;
 
+import static org.apache.flink.util.Preconditions.checkNotNull;
+
 /**
  * Stub implementation of the future default scheduler.
  */
@@ -72,11 +78,19 @@ public class DefaultScheduler extends LegacyScheduler implements SchedulerOperat
 
 	private final SchedulingStrategyFactory schedulingStrategyFactory;
 
-	private final ExecutionSlotAllocator executionSlotAllocator;
+	private final SlotProvider slotProvider;
 
-	private final ExecutionFailureHandler executionFailureHandler;
+	private final Time slotRequestTimeout;
 
-	private final ScheduledExecutorService futureExecutor;
+	private final RestartBackoffTimeStrategy restartBackoffTimeStrategy;
+
+	private ExecutionSlotAllocator executionSlotAllocator;
+
+	private ExecutionFailureHandler executionFailureHandler;
+
+	private final FailoverStrategy.Factory failoverStrategyFactory;
+
+	private final ScheduledExecutor futureExecutor;
 
 	private Comparator<SlotExecutionVertexAssignment> slotExecutionVertexAssignmentComparator;
 
@@ -85,22 +99,23 @@ public class DefaultScheduler extends LegacyScheduler implements SchedulerOperat
 	private final ExecutionVertexVersioner executionVertexVersioner = new ExecutionVertexVersioner();
 
 	public DefaultScheduler(
-			final Logger log,
-			final JobGraph jobGraph,
-			final BackPressureStatsTracker backPressureStatsTracker,
-			final Executor ioExecutor,
-			final Configuration jobMasterConfiguration,
-			final SlotProvider slotProvider,
-			final ScheduledExecutorService futureExecutor,
-			final ClassLoader userCodeLoader,
-			final CheckpointRecoveryFactory checkpointRecoveryFactory,
-			final Time rpcTimeout,
-			final BlobWriter blobWriter,
-			final JobManagerJobMetricGroup jobManagerJobMetricGroup,
-			final Time slotRequestTimeout,
-			final SchedulingStrategyFactory schedulingStrategyFactory,
-			final ExecutionSlotAllocator executionSlotAllocator,
-			final ExecutionFailureHandler executionFailureHandler) throws Exception {
+		final Logger log,
+		final JobGraph jobGraph,
+		final BackPressureStatsTracker backPressureStatsTracker,
+		final Executor ioExecutor,
+		final Configuration jobMasterConfiguration,
+		final SlotProvider slotProvider,
+		final ScheduledExecutorService futureExecutor,
+		final ScheduledExecutor delayExecutor,
+		final ClassLoader userCodeLoader,
+		final CheckpointRecoveryFactory checkpointRecoveryFactory,
+		final Time rpcTimeout,
+		final BlobWriter blobWriter,
+		final JobManagerJobMetricGroup jobManagerJobMetricGroup,
+		final Time slotRequestTimeout,
+		final SchedulingStrategyFactory schedulingStrategyFactory,
+		final FailoverStrategy.Factory failoverStrategyFactory,
+		final RestartBackoffTimeStrategy restartBackoffTimeStrategy) throws Exception {
 
 		super(
 			log,
@@ -118,11 +133,14 @@ public class DefaultScheduler extends LegacyScheduler implements SchedulerOperat
 			jobManagerJobMetricGroup,
 			slotRequestTimeout);
 
-		this.futureExecutor = futureExecutor;
+		this.restartBackoffTimeStrategy = restartBackoffTimeStrategy;
+		this.slotRequestTimeout = slotRequestTimeout;
+		this.slotProvider = slotProvider;
+		// TODO: darf man benutzen?
+		this.futureExecutor = delayExecutor;
 		this.userCodeLoader = userCodeLoader;
-		this.schedulingStrategyFactory = schedulingStrategyFactory;
-		this.executionSlotAllocator = executionSlotAllocator;
-		this.executionFailureHandler = executionFailureHandler;
+		this.schedulingStrategyFactory = checkNotNull(schedulingStrategyFactory);
+		this.failoverStrategyFactory = checkNotNull(failoverStrategyFactory);
 		this.slotExecutionVertexAssignmentComparator = Comparator.comparing(
 			SlotExecutionVertexAssignment::getExecutionVertexId,
 			new ExecutionVertexIDTopologicalComparator(jobGraph));
@@ -139,7 +157,9 @@ public class DefaultScheduler extends LegacyScheduler implements SchedulerOperat
 	}
 
 	private void initializeScheduling() {
+		executionFailureHandler = new ExecutionFailureHandler(failoverStrategyFactory.create(getFailoverTopology()), restartBackoffTimeStrategy);
 		schedulingStrategy = schedulingStrategyFactory.createInstance(this, getSchedulingTopology(), getJobGraph());
+		executionSlotAllocator = new DefaultExecutionSlotAllocator(slotProvider, getSchedulingTopology(), slotRequestTimeout);
 		scheduleForExecution();
 	}
 
@@ -173,7 +193,7 @@ public class DefaultScheduler extends LegacyScheduler implements SchedulerOperat
 		if (failureHandlingResult.canRestart()) {
 			restartTasksWithDelay(failureHandlingResult);
 		} else {
-			// TODO: else fail job forever
+			failJob();
 		}
 	}
 
@@ -186,26 +206,21 @@ public class DefaultScheduler extends LegacyScheduler implements SchedulerOperat
 		final CompletableFuture<?> cancelFuture = cancelTasksAsync(verticesToRestart);
 
 		futureExecutor.schedule(
-			// TODO: futureutils
-			() -> cancelFuture.handleAsync(restartTasksOrHandleError(executionVertexVersions), getMainThreadExecutor()),
+			() -> FutureUtils.assertNoException(
+				cancelFuture.handleAsync(restartTasksOrHandleError(executionVertexVersions), getMainThreadExecutor())),
 			failureHandlingResult.getRestartDelayMS(),
 			TimeUnit.MILLISECONDS);
 	}
 
 	private BiFunction<Object, Throwable, Void> restartTasksOrHandleError(final Set<ExecutionVertexVersion> executionVertexVersions) {
 		return (Object ignored, Throwable throwable) -> {
+
 			if (throwable == null) {
-				// TODO: logic correct?     checkversion of all tasks
-				// TODO: warum sollte man das jetzt nicht rufen? (1) während man wartet, hat ein anderer schon neugestartet
-
 				final Set<ExecutionVertexID> verticesToRestart = getUnmodifiedExecutionVertices(executionVertexVersions);
-
-				// TODO: handle runtime exceptions of strategy
 				schedulingStrategy.restartTasks(verticesToRestart);
 			} else {
-				// TODO: error while canceling ~> fatal error?
+				failJob();
 			}
-
 			return null;
 		};
 	}
@@ -219,7 +234,7 @@ public class DefaultScheduler extends LegacyScheduler implements SchedulerOperat
 
 	private CompletableFuture<?> cancelTasksAsync(final Set<ExecutionVertexID> verticesToRestart) {
 		final List<CompletableFuture<?>> cancelFutures = verticesToRestart.stream()
-			.map(executionVertexId -> cancelExecutionVertex(executionVertexId))
+			.map(this::cancelExecutionVertex)
 			.collect(Collectors.toList());
 
 		return FutureUtils.combineAll(cancelFutures);
@@ -230,9 +245,7 @@ public class DefaultScheduler extends LegacyScheduler implements SchedulerOperat
 	}
 
 	@Override
-	public void scheduleOrUpdateConsumers(final ResultPartitionID partitionID) {
-		// TODO: implement, for now: noop
-
+	public void scheduleOrUpdateConsumers(final ResultPartitionID partitionId) {
 		LOG.debug("scheduleOrUpdateConsumers");
 	}
 
@@ -256,6 +269,8 @@ public class DefaultScheduler extends LegacyScheduler implements SchedulerOperat
 				// TODO: reihenfolge
 				.whenComplete(deployTaskOrHandleError(executionVertexVersion));
 
+			FutureUtils.assertNoException(logicalSlotCompletableFuture);
+
 			predecessorFuture = logicalSlotCompletableFuture;
 		}
 	}
@@ -271,20 +286,19 @@ public class DefaultScheduler extends LegacyScheduler implements SchedulerOperat
 	private ExecutionVertexSchedulingRequirements createSchedulingRequirements(final ExecutionVertexID executionVertexId) {
 		final ExecutionVertex executionVertex = getExecutionVertex(executionVertexId);
 		final AllocationID latestPriorAllocation = executionVertex.getLatestPriorAllocation();
+		final SlotSharingGroup slotSharingGroup = executionVertex.getJobVertex().getSlotSharingGroup();
 
 		return new ExecutionVertexSchedulingRequirements(
 			executionVertexId,
 			latestPriorAllocation,
 			ResourceProfile.UNKNOWN,
-			executionVertex.getJobVertex().getSlotSharingGroup().getSlotSharingGroupId(),
+			slotSharingGroup == null ? null : slotSharingGroup.getSlotSharingGroupId(),
 			executionVertex.getLocationConstraint(),
-			null,
 			Collections.emptyList());
 	}
 
 	private BiConsumer<LogicalSlot, Throwable> deployTaskOrHandleError(final ExecutionVertexVersion executionVertexVersion) {
 		return (logicalSlot, throwable) -> {
-
 			if (executionVertexVersioner.isModified(executionVertexVersion)) {
 				return;
 			}
@@ -301,10 +315,9 @@ public class DefaultScheduler extends LegacyScheduler implements SchedulerOperat
 	private void deployToSlot(final LogicalSlot logicalSlot, final ExecutionVertexID executionVertexId) {
 		final ExecutionVertex executionVertex = getExecutionVertex(executionVertexId);
 		try {
-			// TODO: reset for new execution
+			executionVertex.maybeResetForNewExecution(System.currentTimeMillis());
 			executionVertex.deployToSlot(logicalSlot);
 		} catch (JobException e) {
-			// TODO: logic correct?
 			handleTaskFailure(executionVertexId, e);
 		}
 	}

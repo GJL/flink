@@ -48,6 +48,8 @@ import org.apache.flink.runtime.executiongraph.ExecutionJobVertex;
 import org.apache.flink.runtime.executiongraph.ExecutionVertex;
 import org.apache.flink.runtime.executiongraph.IntermediateResult;
 import org.apache.flink.runtime.executiongraph.JobStatusListener;
+import org.apache.flink.runtime.executiongraph.failover.flip1.FailoverTopology;
+import org.apache.flink.runtime.executiongraph.failover.flip1.MinimalFailoverTopology;
 import org.apache.flink.runtime.executiongraph.restart.RestartStrategy;
 import org.apache.flink.runtime.executiongraph.restart.RestartStrategyFactory;
 import org.apache.flink.runtime.executiongraph.restart.RestartStrategyResolving;
@@ -72,7 +74,6 @@ import org.apache.flink.runtime.rest.handler.legacy.backpressure.BackPressureSta
 import org.apache.flink.runtime.rest.handler.legacy.backpressure.OperatorBackPressureStats;
 import org.apache.flink.runtime.scheduler.adapter.ExecutionGraphToSchedulingTopologyAdapter;
 import org.apache.flink.runtime.scheduler.strategy.ExecutionVertexID;
-import org.apache.flink.runtime.scheduler.strategy.SchedulingTopology;
 import org.apache.flink.runtime.state.KeyGroupRange;
 import org.apache.flink.runtime.taskmanager.TaskExecutionState;
 import org.apache.flink.runtime.taskmanager.TaskManagerLocation;
@@ -184,15 +185,24 @@ public class LegacyScheduler implements SchedulerNG {
 		return mainThreadExecutor;
 	}
 
+	void failJob() {
+		executionGraph.failJob();
+	}
+
 	void updateState(TaskExecutionState taskExecutionState) {
 		executionGraph.updateState(taskExecutionState);
 	}
 
-	SchedulingTopology getSchedulingTopology() {
+	FailoverTopology getFailoverTopology() {
+		return new MinimalFailoverTopology(executionGraph);
+	}
+
+	ExecutionGraphToSchedulingTopologyAdapter getSchedulingTopology() {
 		return new ExecutionGraphToSchedulingTopologyAdapter(executionGraph);
 	}
 
 	void scheduleForExecution() {
+		executionGraph.setLegacyScheduling(false);
 		executionGraph.scheduleForExecutionNG();
 	}
 

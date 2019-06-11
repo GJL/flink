@@ -638,6 +638,56 @@ public class ExecutionVertex implements AccessExecutionVertex, Archiveable<Archi
 		}
 	}
 
+	public void maybeResetForNewExecution(final long timestamp) {
+
+		final Execution oldExecution = currentExecution;
+		final ExecutionState oldState = oldExecution.getState();
+
+		if (oldState.isTerminal()) {
+			LOG.debug("Resetting execution vertex {} for new execution.", getTaskNameWithSubtaskIndex());
+
+			priorExecutions.add(oldExecution.archive());
+
+			final Execution newExecution = new Execution(
+				getExecutionGraph().getFutureExecutor(),
+				this,
+				oldExecution.getAttemptNumber() + 1,
+				-1,
+				timestamp,
+				timeout);
+
+			currentExecution = newExecution;
+
+			synchronized (inputSplits) {
+				InputSplitAssigner assigner = jobVertex.getSplitAssigner();
+				if (assigner != null) {
+					assigner.returnInputSplit(inputSplits, getParallelSubtaskIndex());
+					inputSplits.clear();
+				}
+			}
+
+			CoLocationGroup grp = jobVertex.getCoLocationGroup();
+			if (grp != null) {
+				locationConstraint = grp.getLocationConstraint(subTaskIndex);
+			}
+
+			// register this execution at the execution graph, to receive call backs
+			getExecutionGraph().registerExecution(newExecution);
+
+			// if the execution was 'FINISHED' before, tell the ExecutionGraph that
+			// we take one step back on the road to reaching global FINISHED
+			if (oldState == FINISHED) {
+				getExecutionGraph().vertexUnFinished();
+			}
+
+			// reset the intermediate results
+			for (IntermediateResultPartition resultPartition : resultPartitions.values()) {
+				resultPartition.resetForNewExecution();
+			}
+
+		}
+	}
+
 	/**
 	 * Schedules the current execution of this ExecutionVertex.
 	 *
@@ -812,5 +862,9 @@ public class ExecutionVertex implements AccessExecutionVertex, Archiveable<Archi
 	@Override
 	public ArchivedExecutionVertex archive() {
 		return new ArchivedExecutionVertex(this);
+	}
+
+	public boolean isLegacyScheduling() {
+		return getExecutionGraph().isLegacyScheduling();
 	}
 }

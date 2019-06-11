@@ -861,6 +861,10 @@ public class Execution implements AccessExecution, Archiveable<ArchivedExecution
 	}
 
 	void scheduleOrUpdateConsumers(List<List<ExecutionEdge>> allConsumers) {
+		if (!vertex.isLegacyScheduling()) {
+			return;
+		}
+
 		assertRunningInJobMasterMainThread();
 
 		final int numConsumers = allConsumers.size();

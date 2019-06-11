@@ -25,6 +25,19 @@ import org.apache.flink.util.Preconditions;
 import java.util.HashMap;
 import java.util.Map;
 
+/**
+ * Records modifications of
+ * {@link org.apache.flink.runtime.executiongraph.ExecutionVertex ExecutionVertices}, and allows
+ * for checking whether a vertex was modified.
+ *
+ * <p>Examples for modifications include:
+ * <ul>
+ *     <li>cancellation of the underlying execution
+ *     <li>deployment of the execution vertex
+ * </ul>
+ *
+ * @see DefaultScheduler
+ */
 class ExecutionVertexVersioner {
 
 	private final Map<ExecutionVertexID, Long> executionVertexToVersion = new HashMap<>();
@@ -36,8 +49,9 @@ class ExecutionVertexVersioner {
 
 	public boolean isModified(final ExecutionVertexVersion executionVertexVersion) {
 		final Long currentVersion = executionVertexToVersion.get(executionVertexVersion.getExecutionVertexId());
-		Preconditions.checkState(currentVersion != null);
+		Preconditions.checkState(currentVersion != null,
+			"Execution vertex %s does not have a recorded version",
+			executionVertexVersion.getExecutionVertexId());
 		return currentVersion != executionVertexVersion.getVersion();
 	}
-
 }

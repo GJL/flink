@@ -244,6 +244,8 @@ public class ExecutionGraph implements AccessExecutionGraph {
 	/** Blob writer used to offload RPC messages. */
 	private final BlobWriter blobWriter;
 
+	private boolean legacyScheduling = true;
+
 	/** The total number of vertices currently in the execution graph. */
 	private int numVerticesTotal;
 
@@ -897,6 +899,14 @@ public class ExecutionGraph implements AccessExecutionGraph {
 		failoverStrategy.notifyNewVertices(newExecJobVertices);
 	}
 
+	public void setLegacyScheduling(final boolean legacyScheduling) {
+		this.legacyScheduling = legacyScheduling;
+	}
+
+	public boolean isLegacyScheduling() {
+		return legacyScheduling;
+	}
+
 	public void scheduleForExecutionNG() {
 		if (!transitionState(JobStatus.CREATED, JobStatus.RUNNING)) {
 			throw new IllegalStateException("Job may only be scheduled from state " + JobStatus.CREATED);
@@ -1386,6 +1396,10 @@ public class ExecutionGraph implements AccessExecutionGraph {
 	//  State Transitions
 	// ------------------------------------------------------------------------
 
+	private void transitionState(JobStatus newState) {
+		transitionState(state, newState);
+	}
+
 	private boolean transitionState(JobStatus current, JobStatus newState) {
 		return transitionState(current, newState, null);
 	}
@@ -1513,7 +1527,12 @@ public class ExecutionGraph implements AccessExecutionGraph {
 	 *
 	 * @return true if the operation could be executed; false if a concurrent job status change occurred
 	 */
+	@Deprecated
 	private boolean tryRestartOrFail(long globalModVersionForRestart) {
+		if (!isLegacyScheduling()) {
+			return true;
+		}
+
 		JobStatus currentState = state;
 
 		if (currentState == JobStatus.FAILING || currentState == JobStatus.RESTARTING) {
@@ -1558,6 +1577,11 @@ public class ExecutionGraph implements AccessExecutionGraph {
 			// this operation is only allowed in the state FAILING or RESTARTING
 			return false;
 		}
+	}
+
+	public void failJob() {
+		transitionState(JobStatus.FAILED);
+		onTerminalState(JobStatus.FAILED);
 	}
 
 	private void onTerminalState(JobStatus status) {

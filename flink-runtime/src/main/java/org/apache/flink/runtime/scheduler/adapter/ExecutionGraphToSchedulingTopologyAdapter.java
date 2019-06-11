@@ -24,30 +24,38 @@ import org.apache.flink.runtime.executiongraph.ExecutionGraph;
 import org.apache.flink.runtime.executiongraph.ExecutionVertex;
 import org.apache.flink.runtime.executiongraph.IntermediateResultPartition;
 import org.apache.flink.runtime.jobgraph.IntermediateResultPartitionID;
+import org.apache.flink.runtime.jobgraph.JobVertexID;
+import org.apache.flink.runtime.scheduler.InputsLocationsRetriever;
 import org.apache.flink.runtime.scheduler.strategy.ExecutionVertexID;
 import org.apache.flink.runtime.scheduler.strategy.SchedulingExecutionVertex;
 import org.apache.flink.runtime.scheduler.strategy.SchedulingResultPartition;
 import org.apache.flink.runtime.scheduler.strategy.SchedulingTopology;
+import org.apache.flink.runtime.taskmanager.TaskManagerLocation;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
 import java.util.function.Supplier;
+import java.util.stream.Collectors;
 
 import static org.apache.flink.util.Preconditions.checkNotNull;
 
 /**
  * Adapter of {@link ExecutionGraph} to {@link SchedulingTopology}.
  */
-public class ExecutionGraphToSchedulingTopologyAdapter implements SchedulingTopology {
+public class ExecutionGraphToSchedulingTopologyAdapter implements SchedulingTopology, InputsLocationsRetriever {
 
 	private final Map<ExecutionVertexID, DefaultSchedulingExecutionVertex> executionVerticesById;
 
 	private final List<SchedulingExecutionVertex> executionVerticesList;
 
 	private final Map<IntermediateResultPartitionID, ? extends SchedulingResultPartition> resultPartitionsById;
+
+	private final Map<ExecutionVertexID, TaskManagerLocationSupplier> taskManagerLocationSuppliers = new HashMap<>();
 
 	public ExecutionGraphToSchedulingTopologyAdapter(ExecutionGraph graph) {
 		checkNotNull(graph, "execution graph can not be null");
@@ -58,6 +66,7 @@ public class ExecutionGraphToSchedulingTopologyAdapter implements SchedulingTopo
 		Map<ExecutionVertex, DefaultSchedulingExecutionVertex> executionVertexMap = new HashMap<>();
 
 		for (ExecutionVertex vertex : graph.getAllExecutionVertices()) {
+
 			List<DefaultSchedulingResultPartition> producedPartitions = generateProducedSchedulingResultPartition(vertex.getProducedPartitions());
 
 			producedPartitions.forEach(partition -> tmpResultPartitionsById.put(partition.getId(), partition));
@@ -66,6 +75,9 @@ public class ExecutionGraphToSchedulingTopologyAdapter implements SchedulingTopo
 			this.executionVerticesById.put(schedulingVertex.getId(), schedulingVertex);
 			this.executionVerticesList.add(schedulingVertex);
 			executionVertexMap.put(vertex, schedulingVertex);
+
+
+			taskManagerLocationSuppliers.put(schedulingVertex.getId(), new TaskManagerLocationSupplier(vertex));
 		}
 		this.resultPartitionsById = tmpResultPartitionsById;
 
@@ -135,6 +147,31 @@ public class ExecutionGraphToSchedulingTopologyAdapter implements SchedulingTopo
 		}
 	}
 
+	@Override
+	public Collection<Collection<ExecutionVertexID>> getConsumedResultPartitionsProducers(final ExecutionVertexID executionVertexId) {
+		final Optional<SchedulingExecutionVertex> vertex = getVertex(executionVertexId);
+		final SchedulingExecutionVertex schedulingExecutionVertex = vertex.get();
+		final Map<JobVertexID, List<ExecutionVertexID>> producersByJobVertex = schedulingExecutionVertex
+			.getConsumedResultPartitions()
+			.stream()
+			.map(SchedulingResultPartition::getProducer)
+			.map(SchedulingExecutionVertex::getId)
+			.collect(Collectors.groupingBy(ExecutionVertexID::getJobVertexId));
+
+		return new ArrayList<>(producersByJobVertex.values());
+	}
+
+	@Override
+	public Optional<CompletableFuture<TaskManagerLocation>> getTaskManagerLocation(final ExecutionVertexID executionVertexId) {
+		final Optional<SchedulingExecutionVertex> vertex = getVertex(executionVertexId);
+		final SchedulingExecutionVertex schedulingExecutionVertex = vertex.get();
+		if (schedulingExecutionVertex.getState() == ExecutionState.SCHEDULED) {
+			return Optional.of(taskManagerLocationSuppliers.get(executionVertexId).get());
+		} else {
+			return Optional.empty();
+		}
+	}
+
 	private static class ExecutionStateSupplier implements Supplier<ExecutionState> {
 
 		private final ExecutionVertex executionVertex;
@@ -146,6 +183,20 @@ public class ExecutionGraphToSchedulingTopologyAdapter implements SchedulingTopo
 		@Override
 		public ExecutionState get() {
 			return executionVertex.getExecutionState();
+		}
+	}
+
+	private static class TaskManagerLocationSupplier implements Supplier<CompletableFuture<TaskManagerLocation>> {
+
+		private final ExecutionVertex executionVertex;
+
+		TaskManagerLocationSupplier(ExecutionVertex vertex) {
+			executionVertex = checkNotNull(vertex);
+		}
+
+		@Override
+		public CompletableFuture<TaskManagerLocation> get() {
+			return executionVertex.getCurrentTaskManagerLocationFuture();
 		}
 	}
 }

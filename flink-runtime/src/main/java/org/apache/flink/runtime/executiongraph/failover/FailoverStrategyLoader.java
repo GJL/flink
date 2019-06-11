@@ -21,6 +21,7 @@ package org.apache.flink.runtime.executiongraph.failover;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.configuration.IllegalConfigurationException;
 import org.apache.flink.configuration.JobManagerOptions;
+import org.apache.flink.runtime.executiongraph.restart.ThrowingRestartStrategy;
 import org.apache.flink.util.StringUtils;
 
 import org.slf4j.Logger;
@@ -40,6 +41,10 @@ public class FailoverStrategyLoader {
 
 	/** Config name for the {@link RestartPipelinedRegionStrategy} */
 	public static final String PIPELINED_REGION_RESTART_STRATEGY_NAME = "region";
+
+	/** Config name for the {@link ThrowingRestartStrategy} */
+	public static final String THROWING_RESTART_STRATEGY = "throwing";
+
 
 	// ------------------------------------------------------------------------
 
@@ -67,6 +72,9 @@ public class FailoverStrategyLoader {
 
 				case INDIVIDUAL_RESTART_STRATEGY_NAME:
 					return new RestartIndividualStrategy.Factory();
+
+				case THROWING_RESTART_STRATEGY:
+					return new ThrowingFailoverStrategy.Factory();
 
 				default:
 					// we could interpret the parameter as a factory class name and instantiate that
