@@ -24,11 +24,8 @@ import org.apache.flink.configuration.Configuration;
 import org.apache.flink.runtime.blob.BlobWriter;
 import org.apache.flink.runtime.checkpoint.CheckpointRecoveryFactory;
 import org.apache.flink.runtime.concurrent.ScheduledExecutorServiceAdapter;
-import org.apache.flink.runtime.executiongraph.failover.flip1.DumbFailoverTopology;
-import org.apache.flink.runtime.executiongraph.failover.flip1.ExecutionFailureHandler;
 import org.apache.flink.runtime.executiongraph.failover.flip1.NeverRestartBackoffTimeStrategy;
 import org.apache.flink.runtime.executiongraph.failover.flip1.RestartBackoffTimeStrategy;
-import org.apache.flink.runtime.executiongraph.failover.flip1.RestartPipelinedRegionStrategy;
 import org.apache.flink.runtime.jobgraph.JobGraph;
 import org.apache.flink.runtime.jobgraph.ScheduleMode;
 import org.apache.flink.runtime.jobmaster.slotpool.SlotProvider;
@@ -65,7 +62,6 @@ public class DefaultSchedulerFactory implements SchedulerNGFactory {
 			final Time slotRequestTimeout) throws Exception {
 
 		final SchedulingStrategyFactory schedulingStrategyFactory = createSchedulingStrategyFactory(jobGraph.getScheduleMode());
-		final RestartPipelinedRegionStrategy failoverStrategy = new RestartPipelinedRegionStrategy(DumbFailoverTopology.INSTANCE);
 		final RestartBackoffTimeStrategy restartBackoffTimeStrategy = NeverRestartBackoffTimeStrategy.INSTANCE;
 
 		return new DefaultScheduler(
