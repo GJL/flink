@@ -166,7 +166,7 @@ public class JobManagerOptions {
 	@Documentation.ExcludeFromDocumentation("SchedulerNG is still in development.")
 	public static final ConfigOption<String> SCHEDULER =
 		key("jobmanager.scheduler")
-			.defaultValue("legacy")
+			.defaultValue("ng")
 			.withDescription(Description.builder()
 				.text("Determines which scheduler implementation is used to schedule tasks. Accepted values are:")
 				.list(

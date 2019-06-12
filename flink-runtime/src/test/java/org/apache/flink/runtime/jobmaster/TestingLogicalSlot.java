@@ -99,7 +99,7 @@ public class TestingLogicalSlot implements LogicalSlot {
 			int slotNumber,
 			AllocationID allocationId,
 			SlotRequestId slotRequestId,
-			SlotSharingGroupId slotSharingGroupId,
+			@Nullable SlotSharingGroupId slotSharingGroupId,
 			@Nullable CompletableFuture<?> customReleaseFuture,
 			@Nullable SlotOwner slotOwner) {
 
@@ -109,7 +109,7 @@ public class TestingLogicalSlot implements LogicalSlot {
 		this.slotNumber = slotNumber;
 		this.allocationId = Preconditions.checkNotNull(allocationId);
 		this.slotRequestId = Preconditions.checkNotNull(slotRequestId);
-		this.slotSharingGroupId = Preconditions.checkNotNull(slotSharingGroupId);
+		this.slotSharingGroupId = slotSharingGroupId;
 		this.releaseFuture = new CompletableFuture<>();
 		this.customReleaseFuture = customReleaseFuture;
 		this.slotOwner = slotOwner;

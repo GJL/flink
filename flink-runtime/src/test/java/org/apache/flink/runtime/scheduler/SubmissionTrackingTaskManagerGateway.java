@@ -54,7 +54,7 @@ class SubmissionTrackingTaskManagerGateway extends SimpleAckingTaskManagerGatewa
 		for (int i = 0; i < num; i++) {
 			try {
 				final TaskDeploymentDescriptor taskDeploymentDescriptor = taskDeploymentDescriptors.poll(timeoutMs, TimeUnit.MILLISECONDS);
-				checkNotNull(taskDeploymentDescriptor, "Task not submitted within %d ms", timeoutMs);
+				checkNotNull(taskDeploymentDescriptor, "Expected %s tasks to be submitted within %s ms, got %s", num, timeoutMs, i);
 				deployedVertices.add(getExecutionVertexId(taskDeploymentDescriptor));
 			} catch (InterruptedException e) {
 				Thread.currentThread().interrupt();
@@ -63,10 +63,10 @@ class SubmissionTrackingTaskManagerGateway extends SimpleAckingTaskManagerGatewa
 		return deployedVertices;
 	}
 
-	private ExecutionVertexID getExecutionVertexId(final TaskDeploymentDescriptor a) {
-		final TaskInformation taskInformation = deserializeTaskInformation(a);
+	private ExecutionVertexID getExecutionVertexId(final TaskDeploymentDescriptor deploymentDescriptor) {
+		final TaskInformation taskInformation = deserializeTaskInformation(deploymentDescriptor);
 		final JobVertexID jobVertexId = taskInformation.getJobVertexId();
-		final int subtaskIndex = a.getSubtaskIndex();
+		final int subtaskIndex = deploymentDescriptor.getSubtaskIndex();
 		return new ExecutionVertexID(jobVertexId, subtaskIndex);
 	}
 

@@ -28,7 +28,7 @@ import java.util.List;
 /**
  * FailoverStrategy that throws an exception when called.
  */
-public class ThrowingFailoverStrategy extends FailoverStrategy {
+public class NoOpFailoverStrategy extends FailoverStrategy {
 
 	@Override
 	public void onTaskFailure(final Execution taskExecution, final Throwable cause) {
@@ -40,14 +40,14 @@ public class ThrowingFailoverStrategy extends FailoverStrategy {
 
 	@Override
 	public String getStrategyName() {
-		return "throwing restart strategy";
+		return "NoOp failover strategy";
 	}
 
 	public static class Factory implements FailoverStrategy.Factory {
 
 		@Override
 		public FailoverStrategy create(final ExecutionGraph executionGraph) {
-			return new ThrowingFailoverStrategy();
+			return new NoOpFailoverStrategy();
 		}
 	}
 }

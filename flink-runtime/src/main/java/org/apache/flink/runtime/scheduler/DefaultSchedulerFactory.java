@@ -67,8 +67,6 @@ public class DefaultSchedulerFactory implements SchedulerNGFactory {
 		final SchedulingStrategyFactory schedulingStrategyFactory = createSchedulingStrategyFactory(jobGraph.getScheduleMode());
 		final RestartPipelinedRegionStrategy failoverStrategy = new RestartPipelinedRegionStrategy(DumbFailoverTopology.INSTANCE);
 		final RestartBackoffTimeStrategy restartBackoffTimeStrategy = NeverRestartBackoffTimeStrategy.INSTANCE;
-		final ExecutionFailureHandler executionFailureHandler = new ExecutionFailureHandler(failoverStrategy, restartBackoffTimeStrategy);
-		final DumbExecutionSlotAllocator executionSlotAllocator = new DumbExecutionSlotAllocator(slotProvider);
 
 		return new DefaultScheduler(
 			log,

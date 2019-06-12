@@ -469,6 +469,7 @@ public class ExecutionGraph implements AccessExecutionGraph {
 				"ExecutionGraph is not initialized with proper main thread executor. " +
 					"Call to ExecutionGraph.start(...) required.");
 
+		// TODO: new mode?
 		LOG.info("Job recovers via failover strategy: {}", failoverStrategy.getStrategyName());
 	}
 
@@ -1220,6 +1221,9 @@ public class ExecutionGraph implements AccessExecutionGraph {
 	 * @param t The exception that caused the failure.
 	 */
 	public void failGlobal(Throwable t) {
+		if (!isLegacyScheduling()) {
+			ExceptionUtils.rethrow(t);
+		}
 
 		assertRunningInJobMasterMainThread();
 
@@ -1579,7 +1583,8 @@ public class ExecutionGraph implements AccessExecutionGraph {
 		}
 	}
 
-	public void failJob() {
+	public void failJob(Throwable cause) {
+		initFailureCause(cause);
 		transitionState(JobStatus.FAILED);
 		onTerminalState(JobStatus.FAILED);
 	}

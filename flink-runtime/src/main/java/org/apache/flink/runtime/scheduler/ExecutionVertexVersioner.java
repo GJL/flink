@@ -24,6 +24,8 @@ import org.apache.flink.util.Preconditions;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * Records modifications of
@@ -53,5 +55,12 @@ class ExecutionVertexVersioner {
 			"Execution vertex %s does not have a recorded version",
 			executionVertexVersion.getExecutionVertexId());
 		return currentVersion != executionVertexVersion.getVersion();
+	}
+
+	public Set<ExecutionVertexID> getUnmodifiedExecutionVertices(final Set<ExecutionVertexVersion> executionVertexVersions) {
+		return executionVertexVersions.stream()
+			.filter(executionVertexVersion -> !isModified(executionVertexVersion))
+			.map(ExecutionVertexVersion::getExecutionVertexId)
+			.collect(Collectors.toSet());
 	}
 }

@@ -48,6 +48,7 @@ import org.apache.flink.runtime.testtasks.NoOpInvokable;
 import org.apache.flink.runtime.testtasks.WaitingNoOpInvokable;
 import org.apache.flink.util.TestLogger;
 
+import org.junit.Ignore;
 import org.junit.Test;
 
 import java.io.IOException;
@@ -102,6 +103,7 @@ public class MiniClusterITCase extends TestLogger {
 		}
 	}
 
+	@Ignore
 	@Test
 	public void testHandleStreamingJobsWhenNotEnoughSlot() throws Exception {
 		try {
@@ -114,6 +116,7 @@ public class MiniClusterITCase extends TestLogger {
 		}
 	}
 
+	@Ignore
 	@Test
 	public void testHandleBatchJobsWhenNotEnoughSlot() throws Exception {
 		try {

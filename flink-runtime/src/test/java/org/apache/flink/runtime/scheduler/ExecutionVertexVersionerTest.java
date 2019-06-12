@@ -26,7 +26,13 @@ import org.apache.flink.util.TestLogger;
 import org.junit.Before;
 import org.junit.Test;
 
+import java.util.Collections;
+import java.util.Set;
+
+import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.empty;
+import static org.hamcrest.Matchers.is;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertThat;
 import static org.junit.Assert.assertTrue;
@@ -47,13 +53,13 @@ public class ExecutionVertexVersionerTest extends TestLogger {
 	}
 
 	@Test
-	public void vertexModifiedOnce() {
+	public void isModifiedReturnsFalseIfVertexUnmodified() {
 		final ExecutionVertexVersion executionVertexVersion = executionVertexVersioner.recordModification(TEST_EXECUTION_VERTEX_ID);
 		assertFalse(executionVertexVersioner.isModified(executionVertexVersion));
 	}
 
 	@Test
-	public void vertexModifiedTwice() {
+	public void isModifiedReturnsTrueIfVertexIsModified() {
 		final ExecutionVertexVersion executionVertexVersion = executionVertexVersioner.recordModification(TEST_EXECUTION_VERTEX_ID);
 		executionVertexVersioner.recordModification(TEST_EXECUTION_VERTEX_ID);
 		assertTrue(executionVertexVersioner.isModified(executionVertexVersion));
@@ -67,5 +73,26 @@ public class ExecutionVertexVersionerTest extends TestLogger {
 		} catch (final IllegalStateException e) {
 			assertThat(e.getMessage(), containsString("Execution vertex " + TEST_EXECUTION_VERTEX_ID + " does not have a recorded version"));
 		}
+	}
+
+	@Test
+	public void getUnmodifiedVerticesAllVerticesModified() {
+		final ExecutionVertexVersion executionVertexVersion = executionVertexVersioner.recordModification(TEST_EXECUTION_VERTEX_ID);
+		executionVertexVersioner.recordModification(TEST_EXECUTION_VERTEX_ID);
+
+		final Set<ExecutionVertexID> unmodifiedExecutionVertices =
+			executionVertexVersioner.getUnmodifiedExecutionVertices(Collections.singleton(executionVertexVersion));
+
+		assertThat(unmodifiedExecutionVertices, is(empty()));
+	}
+
+	@Test
+	public void getUnmodifiedVerticesNoVerticesModified() {
+		final ExecutionVertexVersion executionVertexVersion = executionVertexVersioner.recordModification(TEST_EXECUTION_VERTEX_ID);
+
+		final Set<ExecutionVertexID> unmodifiedExecutionVertices =
+			executionVertexVersioner.getUnmodifiedExecutionVertices(Collections.singleton(executionVertexVersion));
+
+		assertThat(unmodifiedExecutionVertices, contains(TEST_EXECUTION_VERTEX_ID));
 	}
 }

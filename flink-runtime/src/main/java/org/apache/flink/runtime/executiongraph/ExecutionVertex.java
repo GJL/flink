@@ -97,6 +97,8 @@ public class ExecutionVertex implements AccessExecutionVertex, Archiveable<Archi
 
 	private final ArrayList<InputSplit> inputSplits;
 
+	private boolean sendScheduleOrUpdateConsumerMessage;
+
 	// --------------------------------------------------------------------------------------------
 
 	/**
@@ -351,6 +353,14 @@ public class ExecutionVertex implements AccessExecutionVertex, Archiveable<Archi
 
 	public InputDependencyConstraint getInputDependencyConstraint() {
 		return getJobVertex().getInputDependencyConstraint();
+	}
+
+	public void setSendScheduleOrUpdateConsumerMessage(final boolean sendScheduleOrUpdateConsumerMessage) {
+		this.sendScheduleOrUpdateConsumerMessage = sendScheduleOrUpdateConsumerMessage;
+	}
+
+	public boolean isSendScheduleOrUpdateConsumerMessage() {
+		return sendScheduleOrUpdateConsumerMessage;
 	}
 
 	// --------------------------------------------------------------------------------------------
@@ -638,7 +648,8 @@ public class ExecutionVertex implements AccessExecutionVertex, Archiveable<Archi
 		}
 	}
 
-	public void maybeResetForNewExecution(final long timestamp) {
+	public void maybeResetForNewExecution() {
+		long timestamp = System.currentTimeMillis();
 
 		final Execution oldExecution = currentExecution;
 		final ExecutionState oldState = oldExecution.getState();
@@ -709,6 +720,17 @@ public class ExecutionVertex implements AccessExecutionVertex, Archiveable<Archi
 			queued,
 			locationPreferenceConstraint,
 			allPreviousExecutionGraphAllocationIds);
+	}
+
+	public void tryAssignResource(LogicalSlot slot) {
+		if (!currentExecution.tryAssignResource(slot)) {
+			throw new IllegalStateException("Could not assign resource " + slot + " to current execution " +
+				currentExecution + '.');
+		}
+	}
+
+	public void deploy() throws JobException {
+		currentExecution.deploy();
 	}
 
 	public void deployToSlot(LogicalSlot slot) throws JobException {

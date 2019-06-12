@@ -74,7 +74,7 @@ public class FailoverStrategyLoader {
 					return new RestartIndividualStrategy.Factory();
 
 				case THROWING_RESTART_STRATEGY:
-					return new ThrowingFailoverStrategy.Factory();
+					return new NoOpFailoverStrategy.Factory();
 
 				default:
 					// we could interpret the parameter as a factory class name and instantiate that

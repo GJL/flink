@@ -82,7 +82,6 @@ import java.util.concurrent.CompletionException;
 import java.util.concurrent.Executor;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
-import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import static org.apache.flink.runtime.deployment.TaskDeploymentDescriptorFactory.getConsumedPartitionShuffleDescriptor;
@@ -636,7 +635,12 @@ public class Execution implements AccessExecution, Archiveable<ArchivedExecution
 			ExecutionAttemptID attemptId) {
 		ProducerDescriptor producerDescriptor = ProducerDescriptor.create(location, attemptId);
 
-		boolean lazyScheduling = vertex.getExecutionGraph().getScheduleMode().allowLazyDeployment();
+		final boolean sendScheduleOrUpdateConsumersMessage;
+		if (vertex.isLegacyScheduling()) {
+			sendScheduleOrUpdateConsumersMessage = vertex.getExecutionGraph().getScheduleMode().allowLazyDeployment();
+		} else {
+			sendScheduleOrUpdateConsumersMessage = vertex.isSendScheduleOrUpdateConsumerMessage();
+		}
 
 		Collection<IntermediateResultPartition> partitions = vertex.getProducedPartitions().values();
 		Collection<CompletableFuture<ResultPartitionDeploymentDescriptor>> partitionRegistrations =
@@ -654,7 +658,7 @@ public class Execution implements AccessExecution, Archiveable<ArchivedExecution
 					partitionDescriptor,
 					shuffleDescriptor,
 					maxParallelism,
-					lazyScheduling));
+					sendScheduleOrUpdateConsumersMessage));
 			partitionRegistrations.add(partitionRegistration);
 		}
 
@@ -749,7 +753,6 @@ public class Execution implements AccessExecution, Archiveable<ArchivedExecution
 			// We run the submission in the future executor so that the serialization of large TDDs does not block
 			// the main thread and sync back to the main thread once submission is completed.
 			CompletableFuture.supplyAsync(() -> taskManagerGateway.submitTask(deployment, rpcTimeout), executor)
-				.thenCompose(Function.identity())
 				.whenCompleteAsync(
 					(ack, failure) -> {
 						// only respond to the failure case
@@ -847,6 +850,10 @@ public class Execution implements AccessExecution, Archiveable<ArchivedExecution
 	}
 
 	private void scheduleConsumer(ExecutionVertex consumerVertex) {
+		if (!vertex.isLegacyScheduling()) {
+			return;
+		}
+
 		try {
 			final ExecutionGraph executionGraph = consumerVertex.getExecutionGraph();
 			consumerVertex.scheduleForExecution(
@@ -861,10 +868,6 @@ public class Execution implements AccessExecution, Archiveable<ArchivedExecution
 	}
 
 	void scheduleOrUpdateConsumers(List<List<ExecutionEdge>> allConsumers) {
-		if (!vertex.isLegacyScheduling()) {
-			return;
-		}
-
 		assertRunningInJobMasterMainThread();
 
 		final int numConsumers = allConsumers.size();
@@ -1432,6 +1435,10 @@ public class Execution implements AccessExecution, Archiveable<ArchivedExecution
 		}
 
 		return preferredLocationsFuture;
+	}
+
+	public void transitionState(ExecutionState targetState) {
+		transitionState(state, targetState);
 	}
 
 	private boolean transitionState(ExecutionState currentState, ExecutionState targetState) {

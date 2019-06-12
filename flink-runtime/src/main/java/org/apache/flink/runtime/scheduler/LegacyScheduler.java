@@ -181,12 +181,20 @@ public class LegacyScheduler implements SchedulerNG {
 	// Scheduler Base
 	// ------------------------------------------------------------------------
 
+	void egScheduleOrUpdateConsumers(ResultPartitionID resultPartitionId) {
+		try {
+			executionGraph.scheduleOrUpdateConsumers(resultPartitionId);
+		} catch (ExecutionGraphException e) {
+			throw new RuntimeException(e);
+		}
+	}
+
 	ComponentMainThreadExecutor getMainThreadExecutor() {
 		return mainThreadExecutor;
 	}
 
-	void failJob() {
-		executionGraph.failJob();
+	void failJob(Throwable cause) {
+		executionGraph.failJob(cause);
 	}
 
 	void updateState(TaskExecutionState taskExecutionState) {

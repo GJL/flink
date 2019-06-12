@@ -120,7 +120,7 @@ public class MiniClusterConfiguration {
 	public static class Builder {
 		private Configuration configuration = new Configuration();
 		private int numTaskManagers = 2;
-		private int numSlotsPerTaskManager = 1;
+		private int numSlotsPerTaskManager = 2;
 		private RpcServiceSharing rpcServiceSharing = SHARED;
 		@Nullable
 		private String commonBindAddress = null;
@@ -152,6 +152,8 @@ public class MiniClusterConfiguration {
 
 		public MiniClusterConfiguration build() {
 			final Configuration modifiedConfiguration = new Configuration(configuration);
+			modifiedConfiguration.setString(JobManagerOptions.SCHEDULER, "ng");
+			modifiedConfiguration.setString(JobManagerOptions.EXECUTION_FAILOVER_STRATEGY, "throwing");
 			modifiedConfiguration.setInteger(TaskManagerOptions.NUM_TASK_SLOTS, numSlotsPerTaskManager);
 			modifiedConfiguration.setString(
 				RestOptions.ADDRESS,
