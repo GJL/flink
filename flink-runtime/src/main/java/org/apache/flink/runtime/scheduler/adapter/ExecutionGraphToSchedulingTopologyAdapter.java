@@ -76,7 +76,6 @@ public class ExecutionGraphToSchedulingTopologyAdapter implements SchedulingTopo
 			this.executionVerticesList.add(schedulingVertex);
 			executionVertexMap.put(vertex, schedulingVertex);
 
-
 			taskManagerLocationSuppliers.put(schedulingVertex.getId(), new TaskManagerLocationSupplier(vertex));
 		}
 		this.resultPartitionsById = tmpResultPartitionsById;
