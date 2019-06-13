@@ -27,6 +27,7 @@ import org.apache.flink.runtime.scheduler.LegacySchedulerFactory;
 import org.apache.flink.runtime.scheduler.SchedulerNGFactory;
 import org.apache.flink.util.TestLogger;
 
+import org.junit.Ignore;
 import org.junit.Test;
 
 import static org.hamcrest.Matchers.containsString;
@@ -41,6 +42,7 @@ public class SchedulerNGFactoryFactoryTest extends TestLogger {
 
 	private static final NoRestartStrategy.NoRestartStrategyFactory TEST_RESTART_STRATEGY_FACTORY = new NoRestartStrategy.NoRestartStrategyFactory();
 
+	@Ignore
 	@Test
 	public void createLegacySchedulerFactoryByDefault() {
 		final SchedulerNGFactory schedulerNGFactory = createSchedulerNGFactory(new Configuration());
