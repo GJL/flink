@@ -86,6 +86,7 @@ import org.slf4j.Logger;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
+import java.util.Collection;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
@@ -180,6 +181,17 @@ public class LegacyScheduler implements SchedulerNG {
 	// ------------------------------------------------------------------------
 	// Scheduler Base
 	// ------------------------------------------------------------------------
+
+	void resetForNewExecution(final Collection<ExecutionVertexID> verticesToDeploy) {
+		verticesToDeploy.forEach(executionVertexId -> getExecutionVertex(executionVertexId)
+			.maybeResetForNewExecution());
+	}
+
+	void transitionToScheduled(final Collection<ExecutionVertexID> verticesToDeploy) {
+		verticesToDeploy.forEach(executionVertexId -> getExecutionVertex(executionVertexId)
+			.getCurrentExecutionAttempt()
+			.transitionState(ExecutionState.SCHEDULED));
+	}
 
 	void egScheduleOrUpdateConsumers(ResultPartitionID resultPartitionId) {
 		try {

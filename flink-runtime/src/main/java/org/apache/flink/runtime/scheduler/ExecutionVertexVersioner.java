@@ -22,9 +22,11 @@ package org.apache.flink.runtime.scheduler;
 import org.apache.flink.runtime.scheduler.strategy.ExecutionVertexID;
 import org.apache.flink.util.Preconditions;
 
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 /**
@@ -49,6 +51,13 @@ class ExecutionVertexVersioner {
 		return new ExecutionVertexVersion(executionVertexId, newVersion);
 	}
 
+	public Map<ExecutionVertexID, ExecutionVertexVersion> recordVertexModifications(
+			final Collection<ExecutionVertexID> vertices) {
+		return vertices.stream()
+			.map(this::recordModification)
+			.collect(Collectors.toMap(ExecutionVertexVersion::getExecutionVertexId, Function.identity()));
+	}
+
 	public boolean isModified(final ExecutionVertexVersion executionVertexVersion) {
 		final Long currentVersion = executionVertexToVersion.get(executionVertexVersion.getExecutionVertexId());
 		Preconditions.checkState(currentVersion != null,
@@ -63,4 +72,5 @@ class ExecutionVertexVersioner {
 			.map(ExecutionVertexVersion::getExecutionVertexId)
 			.collect(Collectors.toSet());
 	}
+
 }
