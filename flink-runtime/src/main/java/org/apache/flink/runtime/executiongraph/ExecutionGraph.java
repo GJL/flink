@@ -249,6 +249,8 @@ public class ExecutionGraph implements AccessExecutionGraph {
 	/** The total number of vertices currently in the execution graph. */
 	private int numVerticesTotal;
 
+	private TaskFailureListener taskFailureListener = null;
+
 	// ------ Configuration of the Execution -------
 
 	/** Flag to indicate whether the scheduler may queue tasks for execution, or needs to be able
@@ -841,6 +843,12 @@ public class ExecutionGraph implements AccessExecutionGraph {
 	public StringifiedAccumulatorResult[] getAccumulatorResultsStringified() {
 		Map<String, OptionalFailure<Accumulator<?, ?>>> accumulatorMap = aggregateUserAccumulators();
 		return StringifiedAccumulatorResult.stringifyAccumulatorResults(accumulatorMap);
+	}
+
+	public void setTaskFailureListener(final TaskFailureListener taskFailureListener) {
+		checkNotNull(taskFailureListener);
+		checkState(this.taskFailureListener == null, "taskFailureListener can be only set once");
+		this.taskFailureListener = taskFailureListener;
 	}
 
 	// --------------------------------------------------------------------------------------------
@@ -1584,9 +1592,17 @@ public class ExecutionGraph implements AccessExecutionGraph {
 	}
 
 	public void failJob(Throwable cause) {
+		if (state == JobStatus.FAILING || state.isGloballyTerminalState()) {
+			return;
+		}
+
+		transitionState(JobStatus.FAILING);
 		initFailureCause(cause);
-		transitionState(JobStatus.FAILED);
-		onTerminalState(JobStatus.FAILED);
+
+		cancelVerticesAsync().whenComplete((aVoid, throwable) -> {
+			transitionState(JobStatus.FAILED);
+			onTerminalState(JobStatus.FAILED);
+		});
 	}
 
 	private void onTerminalState(JobStatus status) {
@@ -1842,6 +1858,12 @@ public class ExecutionGraph implements AccessExecutionGraph {
 	void assertRunningInJobMasterMainThread() {
 		if (!(jobMasterMainThreadExecutor instanceof ComponentMainThreadExecutor.DummyComponentMainThreadExecutor)) {
 			jobMasterMainThreadExecutor.assertRunningInMainThread();
+		}
+	}
+
+	public void notifyFailed(final ExecutionAttemptID attemptId, final Throwable t) {
+		if (taskFailureListener != null) {
+			taskFailureListener.notifyFailed(attemptId, t);
 		}
 	}
 

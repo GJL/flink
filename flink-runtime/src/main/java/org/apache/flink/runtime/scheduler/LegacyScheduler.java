@@ -48,6 +48,7 @@ import org.apache.flink.runtime.executiongraph.ExecutionJobVertex;
 import org.apache.flink.runtime.executiongraph.ExecutionVertex;
 import org.apache.flink.runtime.executiongraph.IntermediateResult;
 import org.apache.flink.runtime.executiongraph.JobStatusListener;
+import org.apache.flink.runtime.executiongraph.TaskFailureListener;
 import org.apache.flink.runtime.executiongraph.failover.flip1.FailoverTopology;
 import org.apache.flink.runtime.executiongraph.failover.flip1.MinimalFailoverTopology;
 import org.apache.flink.runtime.executiongraph.restart.RestartStrategy;
@@ -181,6 +182,10 @@ public class LegacyScheduler implements SchedulerNG {
 	// ------------------------------------------------------------------------
 	// Scheduler Base
 	// ------------------------------------------------------------------------
+
+	void setTaskFailureListener(TaskFailureListener taskFailureListener) {
+		executionGraph.setTaskFailureListener(taskFailureListener);
+	}
 
 	void resetForNewExecution(final Collection<ExecutionVertexID> verticesToDeploy) {
 		verticesToDeploy.forEach(executionVertexId -> getExecutionVertex(executionVertexId)

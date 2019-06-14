@@ -25,11 +25,11 @@ import org.apache.flink.runtime.JobException;
 import org.apache.flink.runtime.blob.BlobWriter;
 import org.apache.flink.runtime.checkpoint.CheckpointRecoveryFactory;
 import org.apache.flink.runtime.clusterframework.types.AllocationID;
-import org.apache.flink.runtime.clusterframework.types.ResourceProfile;
 import org.apache.flink.runtime.concurrent.FutureUtils;
 import org.apache.flink.runtime.concurrent.ScheduledExecutor;
 import org.apache.flink.runtime.execution.ExecutionState;
 import org.apache.flink.runtime.executiongraph.ExecutionVertex;
+import org.apache.flink.runtime.executiongraph.UpdateTaskExecutionStateInDefaultSchedulerListener;
 import org.apache.flink.runtime.executiongraph.failover.flip1.ExecutionFailureHandler;
 import org.apache.flink.runtime.executiongraph.failover.flip1.FailoverStrategy;
 import org.apache.flink.runtime.executiongraph.failover.flip1.FailureHandlingResult;
@@ -93,7 +93,7 @@ public class DefaultScheduler extends LegacyScheduler implements SchedulerOperat
 
 	private final FailoverStrategy.Factory failoverStrategyFactory;
 
-	private final ScheduledExecutor futureExecutor;
+	private final ScheduledExecutor delayExecutor;
 
 	private SchedulingStrategy schedulingStrategy;
 
@@ -137,8 +137,7 @@ public class DefaultScheduler extends LegacyScheduler implements SchedulerOperat
 		this.restartBackoffTimeStrategy = restartBackoffTimeStrategy;
 		this.slotRequestTimeout = slotRequestTimeout;
 		this.slotProvider = slotProvider;
-		// TODO: darf man benutzen?
-		this.futureExecutor = delayExecutor;
+		this.delayExecutor = delayExecutor;
 		this.userCodeLoader = userCodeLoader;
 		this.schedulingStrategyFactory = checkNotNull(schedulingStrategyFactory);
 		this.failoverStrategyFactory = checkNotNull(failoverStrategyFactory);
@@ -158,6 +157,7 @@ public class DefaultScheduler extends LegacyScheduler implements SchedulerOperat
 		executionFailureHandler = new ExecutionFailureHandler(failoverStrategyFactory.create(getFailoverTopology()), restartBackoffTimeStrategy);
 		schedulingStrategy = schedulingStrategyFactory.createInstance(this, getSchedulingTopology(), getJobGraph());
 		executionSlotAllocator = new DefaultExecutionSlotAllocator(slotProvider, getSchedulingTopology(), slotRequestTimeout);
+		setTaskFailureListener(new UpdateTaskExecutionStateInDefaultSchedulerListener(this, getJobGraph().getJobID()));
 		scheduleForExecution();
 	}
 
@@ -203,7 +203,7 @@ public class DefaultScheduler extends LegacyScheduler implements SchedulerOperat
 
 		final CompletableFuture<?> cancelFuture = cancelTasksAsync(verticesToRestart);
 
-		futureExecutor.schedule(
+		delayExecutor.schedule(
 			() -> FutureUtils.assertNoException(
 				cancelFuture.handleAsync(restartTasksOrHandleError(executionVertexVersions), getMainThreadExecutor())),
 			failureHandlingResult.getRestartDelayMS(),
@@ -300,14 +300,13 @@ public class DefaultScheduler extends LegacyScheduler implements SchedulerOperat
 		final AllocationID latestPriorAllocation = executionVertex.getLatestPriorAllocation();
 		final SlotSharingGroup slotSharingGroup = executionVertex.getJobVertex().getSlotSharingGroup();
 
-		return new ExecutionVertexSchedulingRequirements(
-			executionVertexId,
-			latestPriorAllocation,
-			ResourceProfile.UNKNOWN,
-			slotSharingGroup == null ? null : slotSharingGroup.getSlotSharingGroupId(),
-			executionVertex.getLocationConstraint(),
-			// TODO: put prior locations
-			Collections.emptyList());
+		return new ExecutionVertexSchedulingRequirements.Builder()
+			.withExecutionVertexId(executionVertexId)
+			.withPreviousAllocationId(latestPriorAllocation)
+			.withSlotSharingGroupId(slotSharingGroup == null ? null : slotSharingGroup.getSlotSharingGroupId())
+			.withCoLocationConstraint(executionVertex.getLocationConstraint())
+			// TODO: fix preferred locations
+			.withPreferredLocations(Collections.emptyList()).build();
 	}
 
 	private static Collection<DeploymentHandle> createDeploymentHandles(
@@ -386,6 +385,8 @@ public class DefaultScheduler extends LegacyScheduler implements SchedulerOperat
 			final ExecutionVertexID executionVertexId = executionVertexVersion.getExecutionVertexId();
 			if (throwable == null) {
 				final ExecutionVertex executionVertex = getExecutionVertex(executionVertexId);
+				// TODO: why not in tryAssignResource ?
+				executionVertex.getCurrentExecutionAttempt().registerProducedPartitions(logicalSlot.getTaskManagerLocation());
 				executionVertex.tryAssignResource(logicalSlot);
 			} else {
 				handleTaskFailure(executionVertexId, throwable);

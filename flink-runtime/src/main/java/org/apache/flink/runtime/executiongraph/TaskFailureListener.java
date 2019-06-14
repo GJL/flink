@@ -17,24 +17,15 @@
  * under the License.
  */
 
-package org.apache.flink.runtime.executiongraph.failover.flip1;
-
-import java.util.Collections;
+package org.apache.flink.runtime.executiongraph;
 
 /**
- * Dumb implementation of {@link FailoverTopology}.
+ * Sometimes the TaskManager is not able to update the task state via RPC, e.g., task is not
+ * running. For such cases task failures can be propagated through implementations of this
+ * interface.
  */
-public enum DumbFailoverTopology implements FailoverTopology {
+public interface TaskFailureListener {
 
-	INSTANCE;
+	void notifyFailed(ExecutionAttemptID attemptId, Throwable t);
 
-	@Override
-	public Iterable<? extends FailoverVertex> getFailoverVertices() {
-		return Collections.emptyList();
-	}
-
-	@Override
-	public boolean containsCoLocationConstraints() {
-		return false;
-	}
 }

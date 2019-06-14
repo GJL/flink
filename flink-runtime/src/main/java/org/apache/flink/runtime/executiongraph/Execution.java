@@ -617,7 +617,7 @@ public class Execution implements AccessExecution, Archiveable<ArchivedExecution
 	}
 
 	@VisibleForTesting
-	CompletableFuture<Execution> registerProducedPartitions(TaskManagerLocation location) {
+	public CompletableFuture<Execution> registerProducedPartitions(TaskManagerLocation location) {
 		assertRunningInJobMasterMainThread();
 
 		return FutureUtils.thenApplyAsyncIfNotDone(
@@ -775,7 +775,10 @@ public class Execution implements AccessExecution, Archiveable<ArchivedExecution
 		}
 		catch (Throwable t) {
 			markFailed(t);
-			ExceptionUtils.rethrow(t);
+
+			if (isLegacyScheduling()) {
+				ExceptionUtils.rethrow(t);
+			}
 		}
 	}
 
@@ -1040,7 +1043,11 @@ public class Execution implements AccessExecution, Archiveable<ArchivedExecution
 	 * @param t The exception that caused the task to fail.
 	 */
 	void markFailed(Throwable t) {
-		processFail(t, true);
+		if (isLegacyScheduling()) {
+			processFail(t, true);
+		} else {
+			vertex.getExecutionGraph().notifyFailed(getAttemptId(), t);
+		}
 	}
 
 	void markFailed(Throwable t, Map<String, Accumulator<?, ?>> userAccumulators, IOMetrics metrics) {
@@ -1188,6 +1195,10 @@ public class Execution implements AccessExecution, Archiveable<ArchivedExecution
 	//  Internal Actions
 	// --------------------------------------------------------------------------------------------
 
+	private boolean isLegacyScheduling() {
+		return getVertex().isLegacyScheduling();
+	}
+
 	private boolean processFail(Throwable t, boolean isCallback) {
 		return processFail(t, isCallback, null, null);
 	}
@@ -1220,7 +1231,10 @@ public class Execution implements AccessExecution, Archiveable<ArchivedExecution
 				return false;
 			}
 
-			if (transitionState(current, FAILED, t)) {
+			if (!isCallback && !isLegacyScheduling()) {
+				vertex.getExecutionGraph().notifyFailed(attemptId, t);
+				return true;
+			} else if (transitionState(current, FAILED, t)) {
 				// success (in a manner of speaking)
 				this.failureCause = t;
 

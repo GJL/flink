@@ -43,10 +43,6 @@ public interface SchedulingTopology {
 	 */
 	Optional<SchedulingExecutionVertex> getVertex(ExecutionVertexID executionVertexId);
 
-	default SchedulingExecutionVertex getVertexOrThrow(ExecutionVertexID executionVertexId) {
-		return getVertex(executionVertexId).orElseThrow(() -> new IllegalArgumentException("Something " + executionVertexId));
-	}
-
 	/**
 	 * Looks up the {@link SchedulingExecutionVertex} for the given {@link ExecutionVertexID}.
 	 *
