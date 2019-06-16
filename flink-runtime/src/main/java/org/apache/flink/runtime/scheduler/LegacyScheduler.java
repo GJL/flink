@@ -95,6 +95,7 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.ScheduledExecutorService;
 
 import static org.apache.flink.util.Preconditions.checkNotNull;
+import static org.apache.flink.util.Preconditions.checkState;
 
 /**
  * A scheduler that delegates to the scheduling logic in the {@link ExecutionGraph}.
@@ -224,6 +225,11 @@ public class LegacyScheduler implements SchedulerNG {
 
 	ExecutionGraphToSchedulingTopologyAdapter getSchedulingTopology() {
 		return new ExecutionGraphToSchedulingTopologyAdapter(executionGraph);
+	}
+
+	InputsLocationsRetriever getInputsLocationsRetriever() {
+		checkState(executionGraph != null);
+		return new ExecutionGraphToInputsLocationRetrieverAdapter(executionGraph);
 	}
 
 	void scheduleForExecution() {

@@ -158,7 +158,7 @@ public class DefaultScheduler extends LegacyScheduler implements SchedulerOperat
 	private void initializeScheduling() {
 		executionFailureHandler = new ExecutionFailureHandler(failoverStrategyFactory.create(getFailoverTopology()), restartBackoffTimeStrategy);
 		schedulingStrategy = schedulingStrategyFactory.createInstance(this, getSchedulingTopology(), getJobGraph());
-		executionSlotAllocator = new DefaultExecutionSlotAllocator(slotProvider, getSchedulingTopology(), slotRequestTimeout);
+		executionSlotAllocator = new DefaultExecutionSlotAllocator(slotProvider, getInputsLocationsRetriever(), slotRequestTimeout);
 		setTaskFailureListener(new UpdateTaskExecutionStateInDefaultSchedulerListener(this, getJobGraph().getJobID()));
 		scheduleForExecution();
 	}
