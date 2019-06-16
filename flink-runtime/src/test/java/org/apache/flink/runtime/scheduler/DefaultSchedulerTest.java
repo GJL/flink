@@ -19,11 +19,13 @@
 
 package org.apache.flink.runtime.scheduler;
 
+import org.apache.flink.api.common.JobID;
 import org.apache.flink.api.common.time.Time;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.configuration.JobManagerOptions;
 import org.apache.flink.runtime.blob.VoidBlobWriter;
 import org.apache.flink.runtime.checkpoint.StandaloneCheckpointRecoveryFactory;
+import org.apache.flink.runtime.clusterframework.types.SlotProfile;
 import org.apache.flink.runtime.concurrent.ManuallyTriggeredScheduledExecutor;
 import org.apache.flink.runtime.execution.ExecutionState;
 import org.apache.flink.runtime.executiongraph.ArchivedExecutionVertex;
@@ -34,10 +36,15 @@ import org.apache.flink.runtime.executiongraph.utils.SimpleSlotProvider;
 import org.apache.flink.runtime.jobgraph.JobGraph;
 import org.apache.flink.runtime.jobgraph.JobStatus;
 import org.apache.flink.runtime.jobgraph.JobVertex;
+import org.apache.flink.runtime.jobgraph.JobVertexID;
+import org.apache.flink.runtime.jobgraph.ScheduleMode;
+import org.apache.flink.runtime.jobmanager.scheduler.ScheduledUnit;
+import org.apache.flink.runtime.jobmaster.SlotRequestId;
 import org.apache.flink.runtime.metrics.groups.UnregisteredMetricGroups;
 import org.apache.flink.runtime.rest.handler.legacy.backpressure.VoidBackPressureStatsTracker;
 import org.apache.flink.runtime.scheduler.strategy.EagerSchedulingStrategy;
 import org.apache.flink.runtime.scheduler.strategy.ExecutionVertexID;
+import org.apache.flink.runtime.scheduler.strategy.LazyFromSourcesSchedulingStrategy;
 import org.apache.flink.runtime.taskmanager.TaskExecutionState;
 import org.apache.flink.runtime.testtasks.NoOpInvokable;
 import org.apache.flink.runtime.testutils.DirectScheduledExecutorService;
@@ -45,11 +52,12 @@ import org.apache.flink.util.Preconditions;
 import org.apache.flink.util.TestLogger;
 
 import org.hamcrest.Matchers;
+import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 
 import java.util.List;
-import java.util.concurrent.Executor;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -66,9 +74,11 @@ public class DefaultSchedulerTest extends TestLogger {
 
 	private static final int TIMEOUT_MS = 1000;
 
+	private static final JobID TEST_JOB_ID = new JobID();
+
 	private ManuallyTriggeredScheduledExecutor taskRestartExecutor = new ManuallyTriggeredScheduledExecutor();
 
-	private Executor executor;
+	private ExecutorService executor;
 
 	private ScheduledExecutorService scheduledExecutorService;
 
@@ -77,6 +87,12 @@ public class DefaultSchedulerTest extends TestLogger {
 	private SubmissionTrackingTaskManagerGateway taskManagerGateway;
 
 	private TestRestartBackoffTimeStrategy testRestartBackoffTimeStrategy;
+
+	private TestExecutionVertexOperations testExecutionVertexOperations;
+
+	private SimpleSlotProvider slotProvider;
+
+	private ExecutionVertexVersioner executionVertexVersioner;
 
 	@Before
 	public void setUp() throws Exception {
@@ -88,11 +104,62 @@ public class DefaultSchedulerTest extends TestLogger {
 		taskManagerGateway = new SubmissionTrackingTaskManagerGateway();
 
 		testRestartBackoffTimeStrategy = new TestRestartBackoffTimeStrategy(true, 0);
+
+		testExecutionVertexOperations = new TestExecutionVertexOperations(new DefaultExecutionVertexOperations());
+
+		slotProvider = new SimpleSlotProvider(TEST_JOB_ID, 12, taskManagerGateway);
+
+		executionVertexVersioner = new ExecutionVertexVersioner();
+	}
+
+	@After
+	public void tearDown() throws Exception {
+		if (scheduledExecutorService != null) {
+			scheduledExecutorService.shutdownNow();
+			scheduledExecutorService.awaitTermination(TIMEOUT_MS, TimeUnit.MILLISECONDS);
+		}
+
+		if (executor != null) {
+			executor.shutdownNow();
+			executor.awaitTermination(TIMEOUT_MS, TimeUnit.MILLISECONDS);
+		}
 	}
 
 	@Test
 	public void startScheduling() {
 		final JobGraph jobGraph = singleNonParallelJobVertexJobGraph();
+		final JobVertex onlyJobVertex = getOnlyJobVertex(jobGraph);
+
+		createSchedulerAndStartScheduling(jobGraph);
+
+		final List<ExecutionVertexID> deployedExecutionVertices = taskManagerGateway.getDeployedExecutionVertices(1, TIMEOUT_MS);
+
+		final ExecutionVertexID executionVertexId = new ExecutionVertexID(onlyJobVertex.getID(), 0);
+		assertThat(deployedExecutionVertices, contains(executionVertexId));
+	}
+
+	@Test
+	public void restartAfterDeploymentFails() {
+		final JobGraph jobGraph = singleNonParallelJobVertexJobGraph();
+		final JobVertex onlyJobVertex = getOnlyJobVertex(jobGraph);
+
+		testExecutionVertexOperations.enableFailDeploy();
+
+		createSchedulerAndStartScheduling(jobGraph);
+
+		testExecutionVertexOperations.disableFailDeploy();
+		taskRestartExecutor.triggerScheduledTasks();
+
+		final List<ExecutionVertexID> deployedExecutionVertices = taskManagerGateway.getDeployedExecutionVertices(1, TIMEOUT_MS);
+
+		final ExecutionVertexID executionVertexId = new ExecutionVertexID(onlyJobVertex.getID(), 0);
+		assertThat(deployedExecutionVertices, contains(executionVertexId));
+	}
+
+	@Test
+	public void scheduleWithLazyStrategy() {
+		final JobGraph jobGraph = singleNonParallelJobVertexJobGraph();
+		jobGraph.setScheduleMode(ScheduleMode.LAZY_FROM_SOURCES);
 		final JobVertex onlyJobVertex = getOnlyJobVertex(jobGraph);
 
 		createSchedulerAndStartScheduling(jobGraph);
@@ -154,12 +221,57 @@ public class DefaultSchedulerTest extends TestLogger {
 		assertThat(jobStatus, is(Matchers.equalTo(JobStatus.FAILED)));
 	}
 
+	@Test
+	public void failJobIfCancelFailsDuringRestart() throws Exception {
+		final JobGraph jobGraph = singleNonParallelJobVertexJobGraph();
+
+		final DefaultScheduler scheduler = createSchedulerAndStartScheduling(jobGraph);
+
+		final ArchivedExecutionVertex onlyExecutionVertex = scheduler.requestJob().getAllExecutionVertices().iterator().next();
+		final ExecutionAttemptID attemptId = onlyExecutionVertex.getCurrentExecutionAttempt().getAttemptId();
+
+		testExecutionVertexOperations.enableFailCancel();
+		scheduler.updateTaskExecutionState(new TaskExecutionState(jobGraph.getJobID(), attemptId, ExecutionState.FAILED));
+
+		taskRestartExecutor.triggerScheduledTasks();
+
+		waitForTermination(scheduler);
+		final JobStatus jobStatus = scheduler.requestJobStatus();
+		assertThat(jobStatus, is(Matchers.equalTo(JobStatus.FAILED)));
+	}
+
+	@Test
+	public void failJobIfNotEnoughResources() throws Exception {
+		drainAllAvailableSlots();
+
+		final JobGraph jobGraph = singleNonParallelJobVertexJobGraph();
+		testRestartBackoffTimeStrategy.setCanRestart(false);
+
+		final DefaultScheduler scheduler = createSchedulerAndStartScheduling(jobGraph);
+
+		waitForTermination(scheduler);
+		final JobStatus jobStatus = scheduler.requestJobStatus();
+		assertThat(jobStatus, is(Matchers.equalTo(JobStatus.FAILED)));
+	}
+
+	private void drainAllAvailableSlots() {
+		final int numberOfAvailableSlots = slotProvider.getNumberOfAvailableSlots();
+		for (int i = 0; i < numberOfAvailableSlots; i++) {
+			slotProvider.allocateSlot(
+				new SlotRequestId(),
+				new ScheduledUnit(new JobVertexID(), null, null),
+				SlotProfile.noRequirements(),
+				Time.milliseconds(TIMEOUT_MS));
+		}
+	}
+
 	private void waitForTermination(final DefaultScheduler scheduler) throws Exception {
 		scheduler.getTerminationFuture().get(TIMEOUT_MS, TimeUnit.MILLISECONDS);
 	}
 
 	private static JobGraph singleNonParallelJobVertexJobGraph() {
-		final JobGraph jobGraph = new JobGraph();
+		final JobGraph jobGraph = new JobGraph(TEST_JOB_ID, "Testjob");
+		jobGraph.setScheduleMode(ScheduleMode.EAGER);
 		final JobVertex vertex = new JobVertex("source");
 		vertex.setInvokableClass(NoOpInvokable.class);
 		jobGraph.addVertex(vertex);
@@ -189,7 +301,7 @@ public class DefaultSchedulerTest extends TestLogger {
 			VoidBackPressureStatsTracker.INSTANCE,
 			executor,
 			configuration,
-			new SimpleSlotProvider(jobGraph.getJobID(), 12, taskManagerGateway),
+			slotProvider,
 			scheduledExecutorService,
 			taskRestartExecutor,
 			ClassLoader.getSystemClassLoader(),
@@ -198,9 +310,13 @@ public class DefaultSchedulerTest extends TestLogger {
 			VoidBlobWriter.getInstance(),
 			UnregisteredMetricGroups.createUnregisteredJobManagerJobMetricGroup(),
 			Time.seconds(300),
-			new EagerSchedulingStrategy.Factory(),
+			jobGraph.getScheduleMode() == ScheduleMode.LAZY_FROM_SOURCES ?
+				new LazyFromSourcesSchedulingStrategy.Factory() :
+				new EagerSchedulingStrategy.Factory(),
 			new RestartAllTasksFailoverStrategy.Factory(),
-			testRestartBackoffTimeStrategy);
+			testRestartBackoffTimeStrategy,
+			testExecutionVertexOperations,
+			executionVertexVersioner);
 	}
 
 	private void startScheduling(final SchedulerNG scheduler) {

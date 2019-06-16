@@ -21,10 +21,8 @@ package org.apache.flink.runtime.scheduler;
 
 import org.apache.flink.api.common.time.Time;
 import org.apache.flink.configuration.Configuration;
-import org.apache.flink.runtime.JobException;
 import org.apache.flink.runtime.blob.BlobWriter;
 import org.apache.flink.runtime.checkpoint.CheckpointRecoveryFactory;
-import org.apache.flink.runtime.clusterframework.types.AllocationID;
 import org.apache.flink.runtime.concurrent.FutureUtils;
 import org.apache.flink.runtime.concurrent.ScheduledExecutor;
 import org.apache.flink.runtime.execution.ExecutionState;
@@ -37,7 +35,6 @@ import org.apache.flink.runtime.executiongraph.failover.flip1.RestartBackoffTime
 import org.apache.flink.runtime.executiongraph.restart.ThrowingRestartStrategy;
 import org.apache.flink.runtime.io.network.partition.ResultPartitionID;
 import org.apache.flink.runtime.jobgraph.JobGraph;
-import org.apache.flink.runtime.jobmanager.scheduler.SlotSharingGroup;
 import org.apache.flink.runtime.jobmaster.LogicalSlot;
 import org.apache.flink.runtime.jobmaster.slotpool.SlotProvider;
 import org.apache.flink.runtime.metrics.groups.JobManagerJobMetricGroup;
@@ -53,7 +50,6 @@ import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -97,7 +93,9 @@ public class DefaultScheduler extends LegacyScheduler implements SchedulerOperat
 
 	private SchedulingStrategy schedulingStrategy;
 
-	private final ExecutionVertexVersioner executionVertexVersioner = new ExecutionVertexVersioner();
+	private final ExecutionVertexVersioner executionVertexVersioner;
+
+	private final ExecutionVertexOperations executionVertexOperations;
 
 	public DefaultScheduler(
 		final Logger log,
@@ -116,7 +114,9 @@ public class DefaultScheduler extends LegacyScheduler implements SchedulerOperat
 		final Time slotRequestTimeout,
 		final SchedulingStrategyFactory schedulingStrategyFactory,
 		final FailoverStrategy.Factory failoverStrategyFactory,
-		final RestartBackoffTimeStrategy restartBackoffTimeStrategy) throws Exception {
+		final RestartBackoffTimeStrategy restartBackoffTimeStrategy,
+		final ExecutionVertexOperations executionVertexOperations,
+		final ExecutionVertexVersioner executionVertexVersioner) throws Exception {
 
 		super(
 			log,
@@ -141,6 +141,8 @@ public class DefaultScheduler extends LegacyScheduler implements SchedulerOperat
 		this.userCodeLoader = userCodeLoader;
 		this.schedulingStrategyFactory = checkNotNull(schedulingStrategyFactory);
 		this.failoverStrategyFactory = checkNotNull(failoverStrategyFactory);
+		this.executionVertexOperations = checkNotNull(executionVertexOperations);
+		this.executionVertexVersioner = executionVertexVersioner;
 	}
 
 	// ------------------------------------------------------------------------
@@ -232,7 +234,7 @@ public class DefaultScheduler extends LegacyScheduler implements SchedulerOperat
 	}
 
 	private CompletableFuture<?> cancelExecutionVertex(final ExecutionVertexID executionVertexId) {
-		return getExecutionVertex(executionVertexId).cancel();
+		return executionVertexOperations.cancel(getExecutionVertex(executionVertexId));
 	}
 
 	@Override
@@ -291,22 +293,9 @@ public class DefaultScheduler extends LegacyScheduler implements SchedulerOperat
 		return executionSlotAllocator.allocateSlotsFor(executionVertexDeploymentOptions
 			.stream()
 			.map(ExecutionVertexDeploymentOption::getExecutionVertexId)
-			.map(this::createSchedulingRequirements)
+			.map(this::getExecutionVertex)
+			.map(ExecutionVertexSchedulingRequirementsMapper::from)
 			.collect(Collectors.toList()));
-	}
-
-	private ExecutionVertexSchedulingRequirements createSchedulingRequirements(final ExecutionVertexID executionVertexId) {
-		final ExecutionVertex executionVertex = getExecutionVertex(executionVertexId);
-		final AllocationID latestPriorAllocation = executionVertex.getLatestPriorAllocation();
-		final SlotSharingGroup slotSharingGroup = executionVertex.getJobVertex().getSlotSharingGroup();
-
-		return new ExecutionVertexSchedulingRequirements.Builder()
-			.withExecutionVertexId(executionVertexId)
-			.withPreviousAllocationId(latestPriorAllocation)
-			.withSlotSharingGroupId(slotSharingGroup == null ? null : slotSharingGroup.getSlotSharingGroupId())
-			.withCoLocationConstraint(executionVertex.getLocationConstraint())
-			// TODO: fix preferred locations
-			.withPreferredLocations(Collections.emptyList()).build();
 	}
 
 	private static Collection<DeploymentHandle> createDeploymentHandles(
@@ -339,6 +328,7 @@ public class DefaultScheduler extends LegacyScheduler implements SchedulerOperat
 					.getLogicalSlotFuture()
 					.handle(assignResourceOrHandleError(requiredVertexVersion))
 					.handle(deployOrHandleError(requiredVertexVersion, deploymentHandle.getDeploymentOption())));
+
 		}
 	}
 
@@ -385,7 +375,8 @@ public class DefaultScheduler extends LegacyScheduler implements SchedulerOperat
 			final ExecutionVertexID executionVertexId = executionVertexVersion.getExecutionVertexId();
 			if (throwable == null) {
 				final ExecutionVertex executionVertex = getExecutionVertex(executionVertexId);
-				// TODO: why not in tryAssignResource ?
+
+				// TODO: why not call registerProducedPartitionsn in tryAssignResource ?
 				executionVertex.getCurrentExecutionAttempt().registerProducedPartitions(logicalSlot.getTaskManagerLocation());
 				executionVertex.tryAssignResource(logicalSlot);
 			} else {
@@ -419,18 +410,11 @@ public class DefaultScheduler extends LegacyScheduler implements SchedulerOperat
 
 	private void deployTaskSafe(final ExecutionVertexDeploymentOption executionVertexDeploymentOption) {
 		try {
-			deployTask(executionVertexDeploymentOption);
+			final DeploymentOption deploymentOption = executionVertexDeploymentOption.getDeploymentOption();
+			final ExecutionVertex executionVertex = getExecutionVertex(executionVertexDeploymentOption.getExecutionVertexId());
+			executionVertexOperations.deploy(executionVertex, deploymentOption);
 		} catch (Throwable e) {
 			handleTaskFailure(executionVertexDeploymentOption.getExecutionVertexId(), e);
 		}
-	}
-
-	private void deployTask(final ExecutionVertexDeploymentOption executionVertexDeploymentOption) throws JobException {
-		final ExecutionVertexID executionVertexId = executionVertexDeploymentOption.getExecutionVertexId();
-		final ExecutionVertex executionVertex = getExecutionVertex(executionVertexId);
-		final DeploymentOption deploymentOption = executionVertexDeploymentOption.getDeploymentOption();
-
-		executionVertex.setSendScheduleOrUpdateConsumerMessage(deploymentOption.sendScheduleOrUpdateConsumerMessage());
-		executionVertex.deploy();
 	}
 }

@@ -20,6 +20,7 @@
 package org.apache.flink.runtime.scheduler;
 
 import org.apache.flink.api.common.time.Time;
+import org.apache.flink.runtime.concurrent.FutureUtils;
 import org.apache.flink.runtime.deployment.TaskDeploymentDescriptor;
 import org.apache.flink.runtime.executiongraph.TaskInformation;
 import org.apache.flink.runtime.executiongraph.utils.SimpleAckingTaskManagerGateway;
@@ -35,18 +36,29 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.LinkedBlockingDeque;
 import java.util.concurrent.TimeUnit;
 
-import static org.apache.flink.util.Preconditions.checkNotNull;
+import static org.apache.flink.util.Preconditions.checkState;
 
 class SubmissionTrackingTaskManagerGateway extends SimpleAckingTaskManagerGateway {
 
 	private final BlockingQueue<TaskDeploymentDescriptor> taskDeploymentDescriptors = new LinkedBlockingDeque<>();
+
+	public void setFailSubmission(final boolean failSubmission) {
+		this.failSubmission = failSubmission;
+	}
+
+	private boolean failSubmission;
 
 	@Override
 	public CompletableFuture<Acknowledge> submitTask(final TaskDeploymentDescriptor tdd, final Time timeout) {
 		super.submitTask(tdd, timeout);
 
 		taskDeploymentDescriptors.add(tdd);
-		return CompletableFuture.completedFuture(Acknowledge.get());
+
+		if (failSubmission) {
+			return FutureUtils.completedExceptionally(new RuntimeException("Task submission failed."));
+		} else {
+			return CompletableFuture.completedFuture(Acknowledge.get());
+		}
 	}
 
 	public List<ExecutionVertexID> getDeployedExecutionVertices(int num, long timeoutMs) {
@@ -54,7 +66,7 @@ class SubmissionTrackingTaskManagerGateway extends SimpleAckingTaskManagerGatewa
 		for (int i = 0; i < num; i++) {
 			try {
 				final TaskDeploymentDescriptor taskDeploymentDescriptor = taskDeploymentDescriptors.poll(timeoutMs, TimeUnit.MILLISECONDS);
-				checkNotNull(taskDeploymentDescriptor, "Expected %s tasks to be submitted within %s ms, got %s", num, timeoutMs, i);
+				checkState(taskDeploymentDescriptor != null, "Expected %s tasks to be submitted within %s ms, got %s", num, timeoutMs, i);
 				deployedVertices.add(getExecutionVertexId(taskDeploymentDescriptor));
 			} catch (InterruptedException e) {
 				Thread.currentThread().interrupt();

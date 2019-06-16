@@ -81,7 +81,9 @@ public class DefaultSchedulerFactory implements SchedulerNGFactory {
 			slotRequestTimeout,
 			schedulingStrategyFactory,
 			new RestartAllTasksFailoverStrategy.Factory(),
-			restartBackoffTimeStrategy);
+			restartBackoffTimeStrategy,
+			new DefaultExecutionVertexOperations(),
+			new ExecutionVertexVersioner());
 	}
 
 	private SchedulingStrategyFactory createSchedulingStrategyFactory(final ScheduleMode scheduleMode) {
