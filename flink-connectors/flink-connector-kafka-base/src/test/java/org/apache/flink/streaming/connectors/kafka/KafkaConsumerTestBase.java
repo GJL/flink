@@ -102,6 +102,7 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Properties;
 import java.util.Random;
 import java.util.Set;
@@ -185,9 +186,10 @@ public abstract class KafkaConsumerTestBase extends KafkaTestBaseWithFlink {
 				kafkaServer.getVersion().equals("0.10") ||
 				kafkaServer.getVersion().equals("0.11") ||
 				kafkaServer.getVersion().equals("2.0")) {
-				assertTrue(jee.getCause() instanceof TimeoutException);
+				final Optional<TimeoutException> timeoutExceptionOptional = ExceptionUtils.findThrowable(jee, TimeoutException.class);
+				assertTrue(timeoutExceptionOptional.isPresent());
 
-				TimeoutException te = (TimeoutException) jee.getCause();
+				TimeoutException te = timeoutExceptionOptional.get();
 
 				assertEquals("Timeout expired while fetching topic metadata", te.getMessage());
 			} else {
