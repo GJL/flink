@@ -193,11 +193,9 @@ public abstract class KafkaConsumerTestBase extends KafkaTestBaseWithFlink {
 
 				assertEquals("Timeout expired while fetching topic metadata", te.getMessage());
 			} else {
-				assertTrue(jee.getCause() instanceof RuntimeException);
-
-				RuntimeException re = (RuntimeException) jee.getCause();
-
-				assertTrue(re.getMessage().contains("Unable to retrieve any partitions"));
+				final Optional<Throwable> throwable = ExceptionUtils.findThrowableWithMessage(jee, "Unable to retrieve any partitions");
+				assertTrue(throwable.isPresent());
+				assertTrue(throwable.get() instanceof RuntimeException);
 			}
 		}
 	}
