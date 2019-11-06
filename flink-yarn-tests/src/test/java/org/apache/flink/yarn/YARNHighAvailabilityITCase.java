@@ -65,6 +65,7 @@ import org.junit.AfterClass;
 import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.ClassRule;
+import org.junit.Ignore;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 
@@ -152,6 +153,7 @@ public class YARNHighAvailabilityITCase extends YarnTestBase {
 	 * a persisted {@link JobGraph}.
 	 */
 	@Test
+	@Ignore
 	public void testKillYarnSessionClusterEntrypoint() throws Exception {
 		runTest(() -> {
 			assumeTrue(
@@ -182,6 +184,7 @@ public class YARNHighAvailabilityITCase extends YarnTestBase {
 	}
 
 	@Test
+	@Ignore
 	public void testJobRecoversAfterKillingTaskManager() throws Exception {
 		runTest(() -> {
 			final YarnClusterDescriptor yarnClusterDescriptor = setupYarnClusterDescriptor();
