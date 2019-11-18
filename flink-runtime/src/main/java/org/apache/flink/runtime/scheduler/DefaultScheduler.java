@@ -177,6 +177,7 @@ public class DefaultScheduler extends SchedulerBase implements SchedulerOperatio
 	private void maybeHandleTaskFailure(final TaskExecutionState taskExecutionState, final ExecutionVertexID executionVertexId) {
 		if (taskExecutionState.getExecutionState() == ExecutionState.FAILED) {
 			final Throwable error = taskExecutionState.getError(userCodeLoader);
+			log.info("Handling failure of execution vertex {}", executionVertexId, error);
 			handleTaskFailure(executionVertexId, error);
 		}
 	}
