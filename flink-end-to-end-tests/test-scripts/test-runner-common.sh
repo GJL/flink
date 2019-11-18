@@ -36,7 +36,7 @@ function run_test {
     printf "==============================================================================\n"
 
     # used to randomize created directories
-    export TEST_DATA_DIR=$TEST_INFRA_DIR/temp-test-directory-$(date +%S%N)
+    export TEST_DATA_DIR=$TEST_INFRA_DIR/temp-test-directory-$(openssl rand -hex 12)
     echo "TEST_DATA_DIR: $TEST_DATA_DIR"
 
     backup_flink_dir
