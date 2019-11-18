@@ -391,6 +391,10 @@ public class DefaultScheduler extends SchedulerBase implements SchedulerOperatio
 			if (executionVertexVersioner.isModified(requiredVertexVersion)) {
 				log.debug("Refusing to assign slot to execution vertex {} because this deployment was " +
 					"superseded by another deployment", executionVertexId);
+				log.debug("Logical slot: {}", logicalSlot, throwable);
+				if (logicalSlot != null) {
+					logicalSlot.releaseSlot(null);
+				}
 				return null;
 			}
 
