@@ -124,7 +124,7 @@ echo "Restarting 1 TM"
 $FLINK_DIR/bin/taskmanager.sh start
 wait_for_number_of_running_tms 4
 
-sleep 10
+#sleep 10
 
 echo "Killing 2 TMs"
 kill_random_taskmanager
