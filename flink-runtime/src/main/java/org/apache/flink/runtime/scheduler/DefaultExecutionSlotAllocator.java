@@ -142,8 +142,11 @@ public class DefaultExecutionSlotAllocator implements ExecutionSlotAllocator {
 
 	@Override
 	public void cancel(ExecutionVertexID executionVertexId) {
+		LOG.debug("Trying to cancel slot for execution vertex {}", executionVertexId);
+
 		SlotExecutionVertexAssignment slotExecutionVertexAssignment = pendingSlotAssignments.get(executionVertexId);
 		if (slotExecutionVertexAssignment != null) {
+			LOG.debug("Cancel slot future for execution vertex {}", executionVertexId);
 			slotExecutionVertexAssignment.getLogicalSlotFuture().cancel(false);
 		}
 	}
