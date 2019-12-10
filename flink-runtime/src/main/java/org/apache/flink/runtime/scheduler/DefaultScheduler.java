@@ -422,7 +422,11 @@ public class DefaultScheduler extends SchedulerBase implements SchedulerOperatio
 
 	private void handleTaskDeploymentFailure(final ExecutionVertexID executionVertexId, final Throwable error) {
 		log.info("Error while scheduling or deploying task {}.", executionVertexId, error);
-		handleTaskFailure(executionVertexId, error);
+		updateTaskExecutionState(new TaskExecutionState(
+			getJobGraph().getJobID(),
+			getExecutionVertex(executionVertexId).getCurrentExecutionAttempt().getAttemptId(),
+			ExecutionState.FAILED,
+			error));
 	}
 
 	private static Throwable maybeWrapWithNoResourceAvailableException(final Throwable failure) {
