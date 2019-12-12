@@ -68,7 +68,7 @@ MVN_TEST_OPTIONS="-Dflink.tests.with-openssl"
 e2e_modules=$(find flink-end-to-end-tests -mindepth 2 -maxdepth 5 -name 'pom.xml' -printf '%h\n' | sort -u | tr '\n' ',')
 
 MVN_COMPILE="mvn $MVN_COMMON_OPTIONS $MVN_COMPILE_OPTIONS $PROFILE $MVN_COMPILE_MODULES install"
-MVN_TEST="mvn $MVN_COMMON_OPTIONS $MVN_TEST_OPTIONS $PROFILE $MVN_TEST_MODULES verify"
+MVN_TEST="mvn $MVN_COMMON_OPTIONS $MVN_TEST_OPTIONS $PROFILE -pl flink-tests verify -Dtest=BackPressureITCase -DfailIfNoTests=false"
 MVN_E2E="mvn $MVN_COMMON_OPTIONS $MVN_TEST_OPTIONS $PROFILE -DincludeE2E="org.apache.flink.tests.util.categories.PreCommit" -pl ${e2e_modules},flink-dist verify"
 
 MVN_PID="${ARTIFACTS_DIR}/watchdog.mvn.pid"
@@ -239,7 +239,10 @@ run_with_watchdog "$CMD"
 # Run tests if compilation was successful
 if [ $CMD_TYPE == "MVN" ]; then
 	if [ $EXIT_CODE == 0 ]; then
-		run_with_watchdog "$MVN_TEST"
+		for i in {0..35}
+		do
+			run_with_watchdog "$MVN_TEST"
+		done
 	else
 		echo "=============================================================================="
 		echo "Compilation failure detected, skipping test execution."
