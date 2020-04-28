@@ -86,8 +86,8 @@ jobs:
     matrix:
       core:
         module: core
-      python:
-        module: python
+      core2:
+        module: core
       libraries:
         module: libraries
       blink_planner:
