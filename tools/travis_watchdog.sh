@@ -263,7 +263,7 @@ run_with_watchdog "$CMD"
 # Run tests if compilation was successful
 if [ $CMD_TYPE == "MVN" ]; then
 	if [ $EXIT_CODE == 0 ]; then
-		for i in {1..10}
+		for i in {1..150}
 		do
 			run_with_watchdog "$MVN_TEST"
 		done
