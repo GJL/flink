@@ -52,6 +52,7 @@ cd "$END_TO_END_DIR"
 # Prepare Flink
 ################################################################################
 
+while sleep 10; do print_mem_use; done &
 echo "[INFO]Preparing Flink cluster..."
 
 set_config_key "taskmanager.memory.process.size" "4096m"
