@@ -53,6 +53,7 @@ cd "$END_TO_END_DIR"
 ################################################################################
 
 while sleep 10; do print_mem_use; done &
+pmem_use_pid=$!
 echo "[INFO]Preparing Flink cluster..."
 
 sed -i -e 's/rootLogger.level = .*/rootLogger.level = DEBUG/' "$FLINK_DIR/conf/log4j.properties"
@@ -73,6 +74,8 @@ RESULT_DIR="$TARGET_DIR/result"
 mkdir -p "$RESULT_DIR"
 
 $FLINK_DIR/bin/flink run -c org.apache.flink.table.tpcds.TpcdsTestProgram "$TARGET_DIR/TpcdsTestProgram.jar" -sourceTablePath "$TPCDS_DATA_DIR" -queryPath "$TPCDS_QUERY_DIR" -sinkTablePath "$RESULT_DIR" -useTableStats "$USE_TABLE_STATS"
+
+kill $pmem_use_pid
 
 function sql_cleanup() {
   stop_cluster
