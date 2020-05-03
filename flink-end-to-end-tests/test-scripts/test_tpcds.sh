@@ -70,6 +70,9 @@ cd "$END_TO_END_DIR"
 
 echo "[INFO]Preparing Flink cluster..."
 
+# Enable debug logging
+sed -i -e 's/rootLogger.level = .*/rootLogger.level = DEBUG/' "$FLINK_DIR/conf/log4j.properties"
+
 set_config_key "taskmanager.memory.process.size" "4096m"
 set_config_key "taskmanager.numberOfTaskSlots" "4"
 set_config_key "parallelism.default" "4"
