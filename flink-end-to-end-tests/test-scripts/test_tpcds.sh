@@ -25,6 +25,22 @@ USE_TABLE_STATS=true
 source "$(dirname "$0")"/common.sh
 
 ################################################################################
+# Debug prints
+################################################################################
+echo "=============================================================================="
+echo "The following Java processes are running (JPS)"
+echo "=============================================================================="
+jps
+
+echo "=============================================================================="
+echo "Disk utilization"
+echo "=============================================================================="
+df -h
+
+while sleep 10; do print_mem_use; done &
+pid_print_mem_use=$!
+
+################################################################################
 # Generate test data
 ################################################################################
 TPCDS_TOOL_DIR="$END_TO_END_DIR/flink-tpcds-test/tpcds-tool"
@@ -70,6 +86,8 @@ RESULT_DIR="$TARGET_DIR/result"
 mkdir -p "$RESULT_DIR"
 
 $FLINK_DIR/bin/flink run -c org.apache.flink.table.tpcds.TpcdsTestProgram "$TARGET_DIR/TpcdsTestProgram.jar" -sourceTablePath "$TPCDS_DATA_DIR" -queryPath "$TPCDS_QUERY_DIR" -sinkTablePath "$RESULT_DIR" -useTableStats "$USE_TABLE_STATS"
+
+kill $pid_print_mem_use
 
 function sql_cleanup() {
   stop_cluster
