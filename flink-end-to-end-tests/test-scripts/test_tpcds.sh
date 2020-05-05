@@ -76,6 +76,7 @@ sed -i -e 's/rootLogger.level = .*/rootLogger.level = DEBUG/' "$FLINK_DIR/conf/l
 set_config_key "taskmanager.memory.process.size" "4096m"
 set_config_key "taskmanager.numberOfTaskSlots" "4"
 set_config_key "parallelism.default" "4"
+set_config_key "env.java.opts" "-verbose:gc"
 start_cluster
 
 
