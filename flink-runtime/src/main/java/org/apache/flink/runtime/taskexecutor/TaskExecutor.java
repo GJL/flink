@@ -1530,6 +1530,8 @@ public class TaskExecutor extends RpcEndpoint implements TaskExecutorGateway {
 
 			AccumulatorSnapshot accumulatorSnapshot = task.getAccumulatorRegistry().getSnapshot();
 
+			log.debug("Serialized user accumulators");
+
 			updateTaskExecutionState(
 					jobMasterGateway,
 					new TaskExecutionState(
@@ -1539,6 +1541,8 @@ public class TaskExecutor extends RpcEndpoint implements TaskExecutorGateway {
 						task.getFailureCause(),
 						accumulatorSnapshot,
 						task.getMetricGroup().getIOMetricGroup().createSnapshot()));
+
+			log.debug("Sent task execution state");
 		} else {
 			log.error("Cannot find task with ID {} to unregister.", executionAttemptID);
 		}
