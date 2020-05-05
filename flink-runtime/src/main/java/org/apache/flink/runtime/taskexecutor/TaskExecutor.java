@@ -500,6 +500,7 @@ public class TaskExecutor extends RpcEndpoint implements TaskExecutorGateway {
 			TaskDeploymentDescriptor tdd,
 			JobMasterId jobMasterId,
 			Time timeout) {
+		log.debug("Submit task {}", tdd);
 
 		try {
 			final JobID jobId = tdd.getJobId();
