@@ -316,6 +316,8 @@ public class ResultPartition implements ResultPartitionWriter, BufferPoolOwner {
 		checkElementIndex(index, subpartitions.length, "Subpartition not found.");
 		checkState(!isReleased.get(), "Partition released.");
 
+		LOG.debug("Creating ResultSubpartitionView");
+
 		ResultSubpartitionView readView = subpartitions[index].createReadView(availabilityListener);
 
 		LOG.debug("Created {}", readView);
