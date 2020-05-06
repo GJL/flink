@@ -24,6 +24,9 @@ import org.apache.flink.runtime.io.network.buffer.Buffer;
 import org.apache.flink.runtime.io.network.buffer.BufferConsumer;
 import org.apache.flink.util.FlinkRuntimeException;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import javax.annotation.Nullable;
 import javax.annotation.concurrent.GuardedBy;
 
@@ -62,6 +65,8 @@ import static org.apache.flink.util.Preconditions.checkState;
  * thread-safe vis-a-vis each other.
  */
 final class BoundedBlockingSubpartition extends ResultSubpartition {
+
+	private static final Logger LOG = LoggerFactory.getLogger(BoundedBlockingSubpartition.class);
 
 	/** This lock guards the creation of readers and disposal of the memory mapped file. */
 	private final Object lock = new Object();
@@ -238,7 +243,9 @@ final class BoundedBlockingSubpartition extends ResultSubpartition {
 		// To avoid segmentation faults, we need to wait until all readers have been released.
 
 		if (readers.isEmpty()) {
+			LOG.debug("Close {}", data);
 			data.close();
+			LOG.debug("Closed {}", data);
 		}
 	}
 
