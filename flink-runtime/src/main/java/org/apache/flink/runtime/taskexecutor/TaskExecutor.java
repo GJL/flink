@@ -1507,6 +1507,7 @@ public class TaskExecutor extends RpcEndpoint implements TaskExecutorGateway {
 				if (throwable != null) {
 					failTask(executionAttemptID, throwable);
 				}
+				log.debug("Update task execution state acked.");
 			},
 			getMainThreadExecutor());
 	}
