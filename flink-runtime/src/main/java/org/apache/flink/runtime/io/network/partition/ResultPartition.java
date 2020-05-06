@@ -294,6 +294,8 @@ public class ResultPartition implements ResultPartitionWriter, BufferPoolOwner {
 					LOG.error("Error during release of result subpartition: " + t.getMessage(), t);
 				}
 			}
+
+			LOG.debug("{}: Released {}.", owningTaskName, this);
 		}
 	}
 
