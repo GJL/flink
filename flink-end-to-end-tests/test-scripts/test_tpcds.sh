@@ -86,7 +86,7 @@ set_config_key "akka.ask.timeout" "5s"
 start_cluster
 
 pid_tm=`jps | grep TaskManager | cut -d' ' -f1`
-while sleep 3; do print_stacktrace ${pid_tm}; done &
+while sleep 1; do print_stacktrace ${pid_tm}; done &
 pid_stacktrace=$!
 
 ################################################################################
