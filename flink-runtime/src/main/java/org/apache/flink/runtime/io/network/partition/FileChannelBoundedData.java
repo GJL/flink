@@ -24,6 +24,9 @@ import org.apache.flink.runtime.io.network.buffer.Buffer;
 import org.apache.flink.runtime.io.network.buffer.BufferRecycler;
 import org.apache.flink.util.IOUtils;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import javax.annotation.Nullable;
 
 import java.io.IOException;
@@ -42,6 +45,8 @@ import static org.apache.flink.util.Preconditions.checkState;
  * The readers are simple file channel readers using a simple dedicated buffer pool.
  */
 final class FileChannelBoundedData implements BoundedData {
+
+	private static final Logger LOG = LoggerFactory.getLogger(FileChannelBoundedData.class);
 
 	private final Path filePath;
 
@@ -89,8 +94,11 @@ final class FileChannelBoundedData implements BoundedData {
 
 	@Override
 	public void close() throws IOException {
+		LOG.debug("Close fileChannel");
 		IOUtils.closeQuietly(fileChannel);
+		LOG.debug("Closed fileChannel");
 		Files.delete(filePath);
+		LOG.debug("Deleted filePath");
 	}
 
 	// ------------------------------------------------------------------------
