@@ -40,6 +40,11 @@ df -h
 while sleep 10; do print_mem_use; done &
 pid_print_mem_use=$!
 
+function print_stacktrace() {
+  local pid=$1
+  jstack $pid
+}
+
 ################################################################################
 # Generate test data
 ################################################################################
@@ -80,6 +85,9 @@ set_config_key "env.java.opts" "-verbose:gc"
 set_config_key "akka.ask.timeout" "5s"
 start_cluster
 
+pid_tm=`jps | grep TaskManager | cut -d' ' -f1`
+while sleep 3; do print_stacktrace ${pid_tm}; done &
+pid_stacktrace=$!
 
 ################################################################################
 # Run TPC-DS SQL
@@ -93,6 +101,7 @@ mkdir -p "$RESULT_DIR"
 $FLINK_DIR/bin/flink run -c org.apache.flink.table.tpcds.TpcdsTestProgram "$TARGET_DIR/TpcdsTestProgram.jar" -sourceTablePath "$TPCDS_DATA_DIR" -queryPath "$TPCDS_QUERY_DIR" -sinkTablePath "$RESULT_DIR" -useTableStats "$USE_TABLE_STATS"
 
 kill $pid_print_mem_use
+kill $pid_stacktrace
 
 function sql_cleanup() {
   stop_cluster
