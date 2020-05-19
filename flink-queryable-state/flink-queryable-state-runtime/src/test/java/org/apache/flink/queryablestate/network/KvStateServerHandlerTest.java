@@ -66,6 +66,8 @@ import org.apache.flink.shaded.netty4.io.netty.handler.codec.LengthFieldBasedFra
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.junit.runners.Parameterized;
 
 import java.net.InetAddress;
 import java.util.Collections;
@@ -79,7 +81,13 @@ import static org.junit.Assert.assertTrue;
 /**
  * Tests for {@link KvStateServerHandler}.
  */
+@RunWith(Parameterized.class)
 public class KvStateServerHandlerTest extends TestLogger {
+
+	@Parameterized.Parameters
+	public static Object[][] data() {
+		return new Object[100][0];
+	}
 
 	private static KvStateServerImpl testServer;
 
