@@ -30,6 +30,8 @@ import org.junit.Ignore;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
+import org.junit.runner.RunWith;
+import org.junit.runners.Parameterized;
 
 import javax.annotation.Nullable;
 
@@ -62,7 +64,13 @@ import static org.junit.Assert.assertThat;
 /**
  * A few tests for the cleanup of {@link PermanentBlobCache} and {@link TransientBlobCache}.
  */
+@RunWith(Parameterized.class)
 public class BlobCacheCleanupTest extends TestLogger {
+
+	@Parameterized.Parameters
+	public static Object[][] data() {
+		return new Object[100][0];
+	}
 
 	private final Random rnd = new Random();
 

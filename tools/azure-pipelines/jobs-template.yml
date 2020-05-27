@@ -89,20 +89,24 @@ jobs:
     matrix:
       core:
         module: core
-      python:
-        module: python
-      libraries:
-        module: libraries
-      blink_planner:
-        module: blink_planner
-      connectors:
-        module: connectors
-      kafka_gelly:
-        module: kafka/gelly
-      tests:
-        module: tests
-      misc:
-        module: misc
+      core1:
+        module: core
+      core2:
+        module: core
+      core3:
+        module: core
+      core4:
+        module: core
+      core5:
+        module: core
+      core6:
+        module: core
+      core7:
+        module: core
+      core8:
+        module: core
+      core9:
+        module: core
   steps:
   # if on Azure, free up disk space
   - script: ./tools/azure-pipelines/free_disk_space.sh
